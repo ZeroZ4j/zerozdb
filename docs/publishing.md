@@ -18,19 +18,23 @@ email and password. Nothing is published by creating the account.
 This is the step that takes real-world time, because it proves you control the domain the groupId
 is derived from.
 
-1. In the portal, go to **Namespaces** → **Add Namespace** and enter `com.zeroz4j`.
-2. The portal shows a **verification key** — a string like `abc123xyz`.
+**Finding the page:** it is not in the top navigation. Click your **username or email in the
+top-right corner**, then **View Namespaces** in the dropdown.
+
+1. **Add Namespace** → enter `com.zeroz4j` → submit. It appears as *Unverified*.
+2. Click **Verify Namespace**. The state becomes *Verification Pending* and the portal shows the
+   **Verification Key** assigned to the request.
 3. Add a **DNS TXT record** on `zeroz4j.com` whose value is exactly that key. At most registrars
-   this is Advanced DNS → Add Record → TXT, host `@`, value = the key.
-4. Back in the portal, click **Verify Namespace**.
+   this is Advanced DNS → Add Record → TXT, host `@`, value = the key. The check looks at the
+   **exact** domain, so it must be on `zeroz4j.com` itself and not a subdomain.
+4. Verification usually completes within minutes; the portal retries on its own.
 
-DNS propagation is usually minutes but can take hours; the portal lets you retry. Once verified,
-you own `com.zeroz4j` and every artifact under it — including `com.zeroz4j:zerozstack-*` later,
-without repeating this step.
+Once verified you own `com.zeroz4j` and everything under it — including `com.zeroz4j:zerozstack-*`
+later, without repeating any of this.
 
-> If you would rather not touch DNS, the alternative is a GitHub-derived namespace
-> (`io.github.zeroz4j`), verified by creating a public repository the portal names. That works, but
-> it means the coordinates stop matching the domain, so it is worth doing the DNS record properly.
+> **You may already have a namespace.** Signing up with GitHub grants `io.github.<username>`
+> automatically, with no verification step. It works today and needs no DNS, but the coordinates
+> stop matching the brand — worth using only as a fallback if the DNS record proves awkward.
 
 ## 3. Generate a publishing token
 
