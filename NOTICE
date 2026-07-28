@@ -1,0 +1,38 @@
+ZeroZ DB
+Copyright 2026 Franz Schöning
+
+This product includes software developed by Franz Schöning.
+
+Architectural design, reference implementation, and enterprise integration
+strategy by Franz Schöning, Principal Enterprise Architect.
+
+For enterprise architecture advisory, legacy system modernization,
+and AI-integration strategy, visit:
+https://www.franzschoning.com
+
+Part of the ZeroZ4J family of zero-impedance Java projects:
+https://www.zeroz4j.com
+
+=========================================================================
+Third-Party Acknowledgements
+=========================================================================
+This project relies on the following open-source technologies and
+acknowledges their respective licenses and contributors:
+
+* EclipseStore
+  Copyright (c) Eclipse Foundation and contributors.
+  Licensed under the Eclipse Public License - v 2.0.
+  https://eclipsestore.io/
+
+  ZeroZ DB depends on EclipseStore. It does not include or modify any
+  EclipseStore source code.
+
+* Eclipse Serializer
+  Copyright (c) Eclipse Foundation and contributors.
+  Licensed under the Eclipse Public License - v 2.0.
+  https://github.com/eclipse-serializer/serializer
+
+* JUnit 5
+  Copyright (c) The JUnit Team.
+  Licensed under the Eclipse Public License - v 2.0.
+  https://junit.org/junit5/
