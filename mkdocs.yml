@@ -1,0 +1,67 @@
+site_name: ZeroZ DB
+site_description: >-
+  Pure-Java database over EclipseStore: your plain Java objects are the database, with atomic
+  transactions, crash durability, indexes, constraints and an optional network server.
+site_url: https://docs.zerozdb.com/
+repo_url: https://github.com/ZeroZ4j/zerozdb
+repo_name: ZeroZ4j/zerozdb
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; Franz Schöning — Apache 2.0
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - content.code.copy
+    - content.action.edit
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+
+nav:
+  - Home: index.md
+
+  - Get started:
+      - Quickstart: start/quickstart.md
+      - Developer guide: Guide.md
+
+  - Guides:
+      - Troubleshooting: guides/troubleshooting.md
+
+  - Reference:
+      - Glossary: reference/glossary.md
+      - Limitations: reference/limitations.md
+
+  - Design:
+      - Design and rationale: Feasibility-And-Design.md

@@ -1,0 +1,7 @@
+# Documentation toolchain. Pinned deliberately.
+#
+# The Material for MkDocs maintainers have announced that MkDocs 2.0 will introduce
+# backward-incompatible changes with no migration path. Pin these versions and bump
+# them intentionally, after checking that `mkdocs build --strict` still passes.
+mkdocs==1.6.1
+mkdocs-material==9.7.7

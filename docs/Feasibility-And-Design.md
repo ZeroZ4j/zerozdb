@@ -267,7 +267,7 @@ S ≈ days, M ≈ 1–2 weeks, L ≈ multiple weeks each, in focused effort.
 
 ---
 
-## 5. The single-JVM core (v1)
+## 5. The single-JVM core
 
 ### 5.1 API surface
 
@@ -423,24 +423,24 @@ adoption milestone.
 
 ---
 
-## 6. Multi-JVM headroom (designed now, built when needed)
+## 6. Multi-JVM, deployment and operations
 
 Ordered by the capability ladder of §1. The v1 deliverable for this whole section is **two SPI
 seams plus documentation** — nothing else. Seams are cheap now and expensive to retrofit.
 
-### 6.1 Ownership (build in v1 — mostly exists)
+### 6.1 Ownership
 
 Lift the CRM consumer's shipped an exclusive store lock into zerozdb: exclusive file-lock per store directory,
 refuse-to-open on conflict. This makes every later topology safe by default and costs nothing.
 
-### 6.2 Lease-based failover (v2)
+### 6.2 Lease-based failover
 
 Architecture D of the multi-JVM proposal: an arbitrated lease (Postgres advisory lock or
 Infinispan — both already in the consumer's production stack) with fencing tokens extends
 ownership across hosts; a standby JVM opens the store on lease acquisition. "One JVM at a time,
 deliberately" — honest HA without replication code.
 
-### 6.3 Change-log shipping → read replicas (v3, the "serializer over a connection" idea)
+### 6.3 Change-log shipping and read replicas
 
 The v1 seam: zerozdb owns the `EmbeddedStorageFoundation` setup, so it can interpose a
 `PersistenceTarget<Binary>` tee — every committed binary chunk offered to an SPI
@@ -461,7 +461,7 @@ writes still route to the owner. This is exactly Postgres streaming replication'
 the effects, not the commands — which is the trade accepted when choosing lambda write-blocks
 over serializable command objects.
 
-### 6.4 Partitioned write scale-out (when a business case exists)
+### 6.4 Partitioned write scale-out
 
 Architecture C: since every zerozdb engine is per-store, N JVMs each owning disjoint stores *is
 already the library's model* — the library needs nothing new. What's needed is operational:
@@ -472,7 +472,7 @@ login-time, not per-request. Documented as the endgame topology; no v1 code.
 
 ---
 
-## 6.5 Schema evolution and version skew 
+### 6.5 Version skew between JVMs
 
 **The classes are the schema.** There is no DDL: changing the "schema" means changing Java
 classes in the domain-model jar. Two distinct problems follow — on-disk data written by old
@@ -539,7 +539,7 @@ server by restart.
 
 ---
 
-## 6.6 Deployment modes: private and shared stores together 
+### 6.6 Deployment modes: private and shared stores together
 
 A reasonable question: shared segments (Root, templates) must be reachable from several JVMs, while
 each tenant segment is private to one JVM, needs transactions, and must not pay any replication
@@ -572,7 +572,7 @@ available wherever the node owns its data — i.e. always in `EMBEDDED`.
    `localReads()` may trail by one refresh; security and permission checks that must be exact
    should use `query(...)`, which always executes on the owner.
 
-## 6.7 The standalone server 
+### 6.7 The standalone server
 
 `com.zeroz4j.db.server.ZeroZDbServerMain` is the real daemon (previously only an embeddable
 class and a test harness main existed):
@@ -592,7 +592,7 @@ as a shutdown signal, which works everywhere. A hard kill is survivable regardle
 writes are already durable; only a stale endpoint file is left behind, and a client that cannot
 connect falls back to taking ownership.
 
-## 6.8 Cross-host ownership for containers 
+### 6.8 Cross-host ownership for containers
 
 OS file locks are unreliable on NFS/SMB, so ownership is now an SPI —
 `com.zeroz4j.db.lease.OwnershipArbiter` — with two implementations:
@@ -621,7 +621,7 @@ arbiter already holds the exclusive claim, the node opens the store with
 one JVM (a real bug the suite caught during this work).
 
 
-## 6.9 Schema evolution: what actually happens, and how to enforce it 
+### 6.9 Schema evolution on disk, and how to enforce compatibility
 
 Written after building real two-version tests (`SchemaEvolutionTest` compiles two versions of a
 class and runs each in its own JVM — the only faithful way to reproduce "deploy v2, roll back to
@@ -657,7 +657,7 @@ intended rename is indistinguishable from an accidental swap at runtime.
   teleport pattern). Intentional changes are accepted by regenerating the baseline in the same
   commit, so a schema change is reviewed like an API change instead of happening by accident.
 
-## 6.10 Zero-downtime releases with frequent deploys 
+### 6.10 Zero-downtime releases with frequent deploys
 
 The constraint: a store's classes and its owning JVM are welded together, so the goal is to keep
 frequent releases away from that joint.
@@ -679,7 +679,7 @@ Rejected for this consumer: putting tenant data in daemons too. It gives perfect
 app releases and stateless app JVMs, but costs either remote-read latency or replica memory —
 exactly what the owner ruled out.
 
-## 6.11 Security 
+### 6.11 Security
 
 Previously the server bound to loopback only, with no authentication and no transport security —
 fine for a same-host experiment, disqualifying for containers. Now:
@@ -736,7 +736,7 @@ it.** That is what kept the API shaped by use rather than by speculation, and it
 sections below record corrections rather than plans.
 
 
-## 10. Stress harness and measured behaviour 
+## 9. Stress harness and measured behaviour
 
 `src/test/java/org/zeroz4j/db/stress/` is a test *application*, not a unit test: N Loom
 virtual-thread clients hammer a live engine with four mixed workloads, each carrying an
@@ -779,7 +779,7 @@ Reading these honestly:
 - Every invariant held in every run, including under deliberate unique-constraint contention
   and cross-store writes.
 
-### 10.1 Multi-JVM harness 
+### 9.1 Multi-JVM harness
 
 `MultiJvmStress` orchestrates a genuine multi-process run: one **server JVM** owning the store
 (`ServerMain`) and N **client JVMs** (`ClientMain`), each opening several connections and
@@ -812,7 +812,7 @@ stdout after the readiness line, its pipe buffer filled, and the server blocked 
 write. The fix is a dedicated drain thread. Recorded because the symptom is indistinguishable
 from an engine hang and cost a debugging round.
 
-### 10.2 Failover harness 
+### 9.2 Failover harness
 
 `FailoverStress` starts N JVMs on one store in auto-server mode, lets them work, then
 **hard-kills the owner mid-flight** and watches what the survivors do.
@@ -835,7 +835,7 @@ Two honest notes:
 - Requests in flight at the instant of the kill fail and are retried by the node; unacknowledged
   writes may or may not have landed, exactly as with any database.
 
-### 10.3 Replica measurements 
+### 9.3 Replica measurements
 
 The design's central claim is that shipping *commits* rather than *objects-per-access* keeps
 EclipseStore's speed in a client-server topology. Measured on one node pair, same machine:
@@ -858,7 +858,7 @@ Verified alongside the number, because speed without correctness is worthless:
 - **Local reads really are local.** 1000 replica reads cause at most a handful of server
   requests (background refresh only), asserted rather than assumed.
 
-## 9. Open questions
+## 10. Open questions
 
 1. **Read isolation is only half closed.** Writers serialise, but a host framework that reads the
    graph directly rather than through `db.read(...)` is not excluded from a transaction in flight.
