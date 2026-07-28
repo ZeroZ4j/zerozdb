@@ -1,4 +1,9 @@
-# Publishing to Maven Central
+# Releasing ZeroZ DB
+
+How a maintainer cuts a release. Not needed to *use* the library — see
+[docs/Guide.md](docs/Guide.md) for that.
+
+## Publishing to Maven Central
 
 Everything the build needs is already configured. What remains are the account and key steps,
 which only you can do because they prove ownership of a domain and a signing key.

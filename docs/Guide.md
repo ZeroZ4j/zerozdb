@@ -10,7 +10,7 @@ Version 0.1.0. See [API stability](#api-stability) before depending on anything.
 
 ## 1. Getting it
 
-Not yet on Maven Central (see [publishing.md](publishing.md)). Until then, build and install locally:
+Not yet on Maven Central (see [RELEASING.md](../RELEASING.md)). Until then, build and install locally:
 
 ```bash
 git clone https://github.com/zeroz4j/zerozdb.git

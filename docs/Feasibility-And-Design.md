@@ -1,17 +1,16 @@
-# ZeroZ DB — a pure-Java database over EclipseStore
+# ZeroZ DB — design and rationale
 
-Status: **IMPLEMENTED through the multi-JVM ladder; 79 tests green.** Sections marked
-✅ in the milestone table are built; everything else remains proposal.
-Date: 2026-07-27, updated 2026-07-28.
-Name: `zerozdb`, spoken **ZeroZ DB** — locked 2026-07-27. Part of the ZeroZ4J family
-(zeroz4j.com, "zero impedance"); owner is also registering zerozdb.com defensively.
-Maven: `com.zeroz4j:zerozdb`. Entry class: `ZeroZDb`.
+Part of the ZeroZ4J family (zeroz4j.com — "zero impedance").
+Maven: `com.zeroz4j:zerozdb`. Entry class: `ZeroZDb`. 107 tests.
 
-This is the design journal kept while building ZeroZ DB — the reasoning, the measurements, and
-the things that turned out to be wrong. It records decisions in the order they were taken rather
-than presenting a tidy finished architecture, which is deliberate: the rejected options and the
-corrections are the useful part. References to "the consumer" mean the first applications built
-on this library, whose details are not public.
+This records why ZeroZ DB is built the way it is: the alternatives that were considered and
+rejected, the measurements that settled arguments, and the assumptions that turned out to be
+wrong. It is organised as the reasoning happened rather than as a tidy finished architecture,
+because the rejections and the corrections are the part worth reading — a design document that
+only describes what was built teaches nothing about why.
+
+"The consumer" refers to the first applications built on this library; their details are not
+public.
 
 For how to *use* the library, read [Guide.md](Guide.md) instead.
 
@@ -19,11 +18,11 @@ Question asked: can EclipseStore (ES) be turned into a more complete database �
 multi-JVM if possible, transactions, "all the good stuff" — by bolting a layer on top, while
 (a) staying pure Java everywhere and (b) keeping ES's speed?
 
-Decisions already taken with the owner (2026-07-27), which this design treats as requirements:
+Requirements, which this design treats as requirements:
 
 | Decision | Choice |
 |---|---|
-| Topology | One JVM now; product goal (added 2026-07-27): N JVMs pointed at one store self-organize safely — see §1.1 |
+| Topology | One JVM now; product goal : N JVMs pointed at one store self-organize safely — see §1.1 |
 | Concurrency model | Single-writer semantics via write-blocks (`db.write(...)`), plain POJO mutation inside |
 | Change tracking | Explicit touch (`ctx.store(obj)`) — the existing ES habit, no bytecode magic |
 | Workload | Read-heavy, modest writes (tens/sec) |
@@ -67,12 +66,12 @@ the *same* store with in-heap speed. That is architecture B ("storage as a servi
 multi-JVM proposal, and its conclusion stands: if you want that for the whole dataset, the answer
 is PostgreSQL, not a worse reimplementation of it.
 
-This library therefore targets: **a complete single-JVM database experience now, plus items 1–4
-as the product roadmap** (reframed from "headroom" to "roadmap" on 2026-07-27 — see §1.1).
+This library therefore targets **a complete single-JVM database experience, plus items 1–4** —
+all of which are now built; see §1.1.
 
-### 1.1 Product vision: auto-server mode (added 2026-07-27)
+### 1.1 The unifying idea: auto-server mode
 
-Owner's clarified ambition: not a layer specific to one application but a **generic product** — ES
+The ambition is not a layer specific to one application but a **generic product** — ES
 extended with the database features every project needs, so they are never reinvented, and so
 that *pointing two JVMs at the same storage is simply safe*. The drivers are all of: a second
 process needing the data, HA/zero-downtime, read scale-out, and generality itself.
@@ -86,7 +85,7 @@ question is simply dissolved.
 
 zerozdb's version, laddered exactly on §1:
 
-1. **Today (shipped precedent):** second JVM is *refused* (an exclusive store lock). Safe, blunt.
+1. **Baseline:** a second JVM is *refused* (an exclusive store lock). Safe, blunt.
 2. **Auto-server v1:** second JVM discovers the owner (endpoint written beside the store,
    guarded by the ownership lock) and becomes a **write-through client**. Corrected after
    review: a *remote* write cannot be an arbitrary lambda — the executing JVM must have the
@@ -95,30 +94,29 @@ zerozdb's version, laddered exactly on §1:
 3. **Auto-server v2:** the client additionally subscribes to the owner's commit log and holds a
    **live local replica graph** — reads local at heap speed (bounded staleness), writes
    forwarded. Per-read consistency choice: `db.read(...)` (local, fast, may trail sub-second) vs
-   `db.readCurrent(...)` (routed to owner, always current). Owner had no staleness preference,
-   so both are offered and the default is local.
+   `db.readCurrent(...)` (routed to the owner, always current). Both are offered,
+   and the default is local.
 4. **Failover:** owner dies → lease expires → a client holding a full replica promotes itself.
 
 Each rung subsumes the previous; the single-JVM core (§5) is rung 0 and every rung's engine.
 The §1 boundary is untouched: no rung ever has two JVMs mutating one live graph — writers
 funnel to exactly one owner per store, always.
 
-**Two deployment shapes, one mechanism (added after owner review).** In pure peer auto-server
+**Two deployment shapes, one mechanism.** In pure peer auto-server
 mode the owner role belongs to whichever app JVM opened the store first, and after a crash it
 *wanders* to whichever peer promotes itself — safe (disk is the source of truth; an owner is
 only the currently-elected writer) but operationally ugly: an interactive app can end up a
-client of a batch JVM. The owner rejected this as the default experience. Therefore the owner
-role carries a policy bit:
+client of a batch JVM. This is rejected as the default experience, so the owner role carries a policy bit:
 
 - **Peer mode** — role claimable by any JVM (H2-style; dev, tools, small installs).
 - **Dedicated-server mode** — role pinned to processes started as `zerozdb-server` (a headless
-  daemon owning the stores); app JVMs are always clients. This is the owner's original
+  daemon owning the stores); app JVMs are always clients. This is the original
   "storage server on a port" topology, corrected to commit-granularity: clients hold live
   replica graphs (reads local, sub-second stale, `readCurrent()` for exactness), writes ship as
   write-blocks. Requires rung 3 — a dedicated server without client replicas would put every
   read on the wire, which is rejected Architecture B.
 
-**Containers (added after owner review).** With apps in separate containers, peer mode's
+**Containers.** With apps in separate containers, peer mode's
 premise — a shared local filesystem with trustworthy kernel file locks — decays: same-host
 shared bind mounts break on any rescheduling, and file locks on network volumes (NFS/SMB/RWX)
 are unreliable enough to be disqualifying for corruption safety. Kubernetes' ReadWriteOnce
@@ -139,7 +137,7 @@ replica graphs. Consequences for the design, all cheap if decided now:
 - Positioning vs EDG: zerozdb requires no Kubernetes and no Kafka; it merely runs well under them —
   same jar from laptop `java -jar` to StatefulSet, differing only in discovery/lease plugins.
 
-**Memory footprint of replicas (owner question, 2026-07-27).** Yes: every JVM holding a replica
+**Memory footprint of replicas.** Yes: every JVM holding a replica
 graph pays heap for what it materializes — server ~full graph, each replica client its working
 set. Three bounds keep this honest rather than naive 2×: (1) EclipseStore `Lazy` references
 mean a client materializes only what it navigates (making "Lazy on large collections" a design
@@ -151,8 +149,7 @@ Unceremonious owner death, either mode: in-flight unacked write-blocks fail with
 (never torn — ES commit atomicity); every acked commit is on disk; OS releases the file lock at
 process death; lease expires; an eligible process (any peer, or a standby server) opens the
 store, replays to the last consistent commit, and takes over. Outage = lease timeout +
-store-open time (store-open time is an unmeasured open question, inherited from the the CRM consumer
-multi-JVM proposal §7.2). Data loss: none acked.
+store-open time (store-open time is an unmeasured open question, carried over from the prior multi-JVM analysis). Data loss: none acked.
 
 ---
 
@@ -163,10 +160,10 @@ multi-JVM proposal §7.2). Data loss: none acked.
 - **Durable atomic commits.** A `Storer.commit()` is atomic at the storage level; on restart ES
   recovers to the last consistent commit. Crash recovery and online backup are ES's strong suit
   (multi-JVM proposal §2, capabilities 3 and 6: "solved").
-- **The serializer is a standalone artifact** (`org.eclipse.serializer`, used by both the CRM consumer and
+- **The serializer is a standalone artifact** (`org.eclipse.serializer`, used by both consumers and
   zeroz4j at 4.1.0) — usable for wire transport independent of storage.
 - **`LockedExecutor` / `StripeLockedExecutor`** exist in the serializer artifact — callback-style
-  read/write lock wrappers. Verified limitation (the CRM consumer transaction doc §4.5): callback-only, no
+  read/write lock wrappers. Verified limitation (a consumer's transaction design): callback-only, no
   lock handle, cannot span begin→commit. Useful shape precedent, not a building block.
 - **GigaMap** (since ES 3, extended in 4.x): an indexed, lazily-loaded collection with off-heap
   bitmap indexes, a typed fluent query API (`map.query(firstName.is("John"))`), internal
@@ -175,19 +172,19 @@ multi-JVM proposal §7.2). Data loss: none acked.
 - **No** multi-process access, no MVCC, no network protocol, no conflict detection
   (multi-JVM proposal §2, capabilities 1, 2, 4, 5, 7: "no").
 
-### 2.2 Prior art inside the family (all dated 2026-07-26, i.e. current)
+### 2.2 Prior art inside the family
 
 - **A consumer's transaction design** — PROPOSED. Per-store transaction
   layer: RW lock spanning the transaction, before-images in identity-keyed side tables, deferred
   stores flushed once at commit, pluggable version strategy with read-time baseline capture,
   cross-store coordinator with total-order locking. Also documents *verified defects* in today's
   the CRM consumer layer: READ_UNCOMMITTED visibility, silent lost updates, rollback that does I/O.
-  **Correction of an owner assumption:** the CRM consumer's `begin`/`commitTxn` does *not* lock today
+  **A correction:** that consumer's begin/commit does *not* lock today
   — it defers stores and keeps an undo log, but concurrent visibility is uncontrolled (§2.3 of
   that doc). The locking is proposed, not present.
 - **A consumer's multi-JVM analysis** — PROPOSAL. Five architectures analyzed;
   hybrid "partition by tenant + tiny shared Root service" recommended if ever needed.
-- **an exclusive store lock** — SHIPPED in the CRM consumer (commits `c790b96`, `1181692`): a JVM refuses to
+- **an exclusive store lock** — already shipped in a consumer : a JVM refuses to
   open a store another JVM owns. This is capability 1 of §1 above, already written and tested.
 - **`zeroz4j/docs/design/persistence-transactions.md`** — PROPOSED. Same problem, second
   codebase: per-tenant stores in a `ConcurrentHashMap`, raw `store()` calls, a real
@@ -197,7 +194,7 @@ multi-JVM proposal §7.2). Data loss: none acked.
   transaction doc §5): XDEV `spring-data-eclipse-store` (working-copy model — breaks identity,
   non-atomic commit, memory leak) and Eclipse Data Grid (not on Maven Central, one store per
   cluster, Kafka+K8s mandatory, lost-write bugs fixed as recently as 2026-04). Revisit EDG
-  yearly; today it is not consumable. **Re-verified 2026-07-27:** Maven Central search for
+  yearly; today it is not consumable. **Re-verified while writing this:** Maven Central search for
   `g:org.eclipse.datagrid` → 0 artifacts; GitHub repo has no releases, no tags, and no commits
   since 2026-04-28. EDG has never shipped and currently appears stalled. Its value to zerozdb is as
   readable reference code for the commit-log tee/apply path, as validation that the need is
@@ -207,7 +204,7 @@ multi-JVM proposal §7.2). Data loss: none acked.
 ### 2.3 The packaging tension, resolved
 
 The the CRM consumer transaction doc's §6 advised: *"do not extract a shared library before either
-consumer has run in anger."* The owner has now decided standalone-first. These are reconcilable,
+consumer has run in anger."* This design has now decided standalone-first. These are reconcilable,
 and honestly the situation has changed since that sentence was written: **two consumers'
 independent designs converged on the same shape** (per-store scope, two enlistment modes,
 side-table before-images, deferred flush, pluggable versioning). Convergence-before-code is
@@ -235,7 +232,7 @@ or zeroz4j.** The library is standalone in packaging, never in validation.
 | Shared mutable graph across JVMs | ❌ **do not build** | ∞ | Contradicts ES's model (§1) |
 | Pessimistic object locking | ❌ rejected | — | Needs bytecode weaving or discipline-by-hope |
 | MVCC / working copies | ❌ rejected | — | Breaks object identity; see XDEV analysis |
-| SQL/query language | ❌ out of scope | — | Owner decision: Streams + indexes only |
+| SQL/query language | ❌ out of scope | — | Decision: Streams + indexes only |
 
 S ≈ days, M ≈ 1–2 weeks, L ≈ multiple weeks each, in focused effort.
 
@@ -310,7 +307,7 @@ write flush. At tens of writes/second this is invisible. If profiling ever says 
 upgrade path is `StampedLock` optimistic reads behind the same API — an implementation detail,
 not an API change.
 
-**Fairness — measured, then changed (2026-07-27).** The lock is constructed *fair*
+**Fairness — measured, then changed.** The lock is constructed *fair*
 (`new ReentrantReadWriteLock(true)`), against the usual advice, because the stress harness
 (§10) showed the default barging lock starves readers under write saturation. 48 clients,
 `OS_BUFFERED`, same machine:
@@ -325,7 +322,7 @@ stated workload is read-heavy — and whose reads back interactive UI — bounde
 worth far more than peak write rate. Recorded here because the trade is deliberate and the
 opposite default is the conventional one.
 
-**Enforcement ladder (upgraded after owner review — "make it throw").** The guard itself is one
+**Enforcement ladder.** The guard itself is one
 static call: `DbGuard.mutation(obj)` reads a thread-local ("is a write-block active on this
 thread?") and throws `IllegalMutationException` otherwise — nanoseconds. What varies is how the
 call gets injected into plain POJO setters, so injection is an SPI with four rungs:
@@ -353,7 +350,7 @@ releasing the write lock and returning. ES's commit is atomic — a crash mid-co
 the pre-block state; combined with the single flush point, a write-block is all-or-nothing on
 disk.
 
-**V1 RESOLVED (2026-07-27, verified against ES 4.1.0 sources):** EclipseStore **never fsyncs**.
+**Verified against EclipseStore 4.1.0 sources: it never fsyncs.**
 Its write path (`NioIoHandler.specificWriteBytes` → `XIO.write`) does plain channel writes; the
 one fsync-capable method in the codebase (`XIO.appendAllGuaranteed`, containing
 `fileChannel.force(false)` with the comment "this is the right place for a data-safety-securing
@@ -421,7 +418,7 @@ the CRM consumer needs them (provisioning writes 15 stores); zeroz4j doesn't yet
 prevention), phase-1 validation of every participant (version checks, constraints) with all
 locks held, phase-2 apply. Same honest limit: this is not distributed 2PC — process death
 between store commits can leave torn state across stores; foreseeable failures all happen in
-phase 1; the torn case is documented with a repair path. v1.5 feature, driven by the the CRM consumer
+phase 1; the torn case is documented with a repair path. v1.5 feature, driven by the CRM consumer
 adoption milestone.
 
 ---
@@ -475,7 +472,7 @@ login-time, not per-request. Documented as the endgame topology; no v1 code.
 
 ---
 
-## 6.5 Schema evolution and version skew (added after owner review)
+## 6.5 Schema evolution and version skew 
 
 **The classes are the schema.** There is no DDL: changing the "schema" means changing Java
 classes in the domain-model jar. Two distinct problems follow — on-disk data written by old
@@ -508,7 +505,7 @@ per-field (diff-shipping) and is deferred until a real rolling-upgrade need exis
   upgraded clients; the handshake enforces that nothing mismatched ever connects. Blue-green
   friendly.
 
-**Zero-downtime, re-analyzed (owner pushback: "a pity to lose no-downtime releases").**
+**Zero-downtime, re-analysed.**
 Unpacking shows most of it was never lost:
 
 - *Code-only releases* (the majority): client-side fingerprint unchanged → clients roll freely.
@@ -542,9 +539,9 @@ server by restart.
 
 ---
 
-## 6.6 Deployment modes: private and shared stores together (added 2026-07-28)
+## 6.6 Deployment modes: private and shared stores together 
 
-Owner's question: shared segments (Root, templates) must be reachable from several JVMs, while
+A reasonable question: shared segments (Root, templates) must be reachable from several JVMs, while
 each tenant segment is private to one JVM, needs transactions, and must not pay any replication
 memory. Does that need a second, lighter product ("db-lite")?
 
@@ -562,7 +559,7 @@ a lighter engine but a *mode switch*, so the same API serves both. `ZeroZDbNode.
 written once. `localDb()` (lambda write-blocks, index registration, `CrossStoreWrite`) is
 available wherever the node owns its data — i.e. always in `EMBEDDED`.
 
-**Two constraints this shape imposes, which matter for the the CRM consumer design:**
+**Two constraints this shape imposes, which matter for the CRM consumer design:**
 
 1. **Cross-store transactions require every participant to be locally owned.**
    `CrossStoreWrite` coordinates in-process `ZeroZDb` instances. the CRM consumer provisioning writes 14
@@ -575,7 +572,7 @@ available wherever the node owns its data — i.e. always in `EMBEDDED`.
    `localReads()` may trail by one refresh; security and permission checks that must be exact
    should use `query(...)`, which always executes on the owner.
 
-## 6.7 The standalone server (added 2026-07-28)
+## 6.7 The standalone server 
 
 `com.zeroz4j.db.server.ZeroZDbServerMain` is the real daemon (previously only an embeddable
 class and a test harness main existed):
@@ -595,7 +592,7 @@ as a shutdown signal, which works everywhere. A hard kill is survivable regardle
 writes are already durable; only a stale endpoint file is left behind, and a client that cannot
 connect falls back to taking ownership.
 
-## 6.8 Cross-host ownership for containers (added 2026-07-28)
+## 6.8 Cross-host ownership for containers 
 
 OS file locks are unreliable on NFS/SMB, so ownership is now an SPI —
 `com.zeroz4j.db.lease.OwnershipArbiter` — with two implementations:
@@ -624,7 +621,7 @@ arbiter already holds the exclusive claim, the node opens the store with
 one JVM (a real bug the suite caught during this work).
 
 
-## 6.9 Schema evolution: what actually happens, and how to enforce it (added 2026-07-28)
+## 6.9 Schema evolution: what actually happens, and how to enforce it 
 
 Written after building real two-version tests (`SchemaEvolutionTest` compiles two versions of a
 class and runs each in its own JVM — the only faithful way to reproduce "deploy v2, roll back to
@@ -660,7 +657,7 @@ intended rename is indistinguishable from an accidental swap at runtime.
   teleport pattern). Intentional changes are accepted by regenerating the baseline in the same
   commit, so a schema change is reviewed like an API change instead of happening by accident.
 
-## 6.10 Zero-downtime releases with frequent deploys (added 2026-07-28)
+## 6.10 Zero-downtime releases with frequent deploys 
 
 The constraint: a store's classes and its owning JVM are welded together, so the goal is to keep
 frequent releases away from that joint.
@@ -682,7 +679,7 @@ Rejected for this consumer: putting tenant data in daemons too. It gives perfect
 app releases and stateless app JVMs, but costs either remote-read latency or replica memory —
 exactly what the owner ruled out.
 
-## 6.11 Security (added 2026-07-28)
+## 6.11 Security 
 
 Previously the server bound to loopback only, with no authentication and no transport security —
 fine for a same-host experiment, disqualifying for containers. Now:
@@ -715,24 +712,31 @@ stores on a server), rate limiting and connection caps, and audit logging of com
 
 ---
 
-## 8. Milestones
+## 8. What is built
 
-| # | Deliverable | Proves | Consumer change alongside |
-|---|---|---|---|
-| M0 ✅ 2026-07-27 | Repo, `ZeroZDb.open`, read/write blocks, RW lock, single-Storer flush, SYNC durability (fsync via `SyncedIo`), ownership lock, `CommitListener` seam. Kill-9 durability test | Core semantics | ✅ In-repo example client (`example/ProductService`, owner decision 2026-07-27: don't modify the zeroz4j repo) reproduces the zeroz4j two-commit bug *shape* and shows it unwritable |
-| M1 ✅ 2026-07-27 | Before-images, rollback (fields + map/collection contents), `ctx.edit`, `ctx.onRollback` | Exception safety | the CRM consumer `Transaction` internals delegate to zerozdb (its items 1+3) — **pending** |
-| M2 ✅ 2026-07-27 | Heap `Index` + `UniqueIndex` with commit-time constraint enforcement. Design note: membership diffs run against the index's own last-committed state, not before-images — correct under both mutate-then-store and edit-then-mutate (before-images capture post-mutation state in the former, a lesson learned by test failure). Key moves use enlisted entities. Index ops apply only after storage commit; unique violations abort before anything persists. | Query layer | One hot the application consumer list view moves off full scans — **pending** |
-| M3 ✅ 2026-07-27 | `db.baseline(obj)` + `ctx.storeChecked(obj, baseline)` + `StaleObjectException`. Side-table versions; objects tracked only from first baseline (untracked objects cost nothing, no leak growth). Scope note: the pluggable version *accessor* (e.g. the CRM model framework `modifiedAt`) is deliberately deferred until the CRM consumer adoption dictates its shape — no speculative SPI. | Lost-update story | the CRM consumer item 4 choke points (the shared editor base class, the shared mapper base class) — **pending** |
-| M4 ✅ 2026-07-27 | `CrossStoreWrite.run(block, stores...)`: total-order lock acquisition (deadlock-free by construction, tested with opposing declared orders), phase-1 validation of all participants with all locks held, phase-2 per-store commits. Nested `db.write` on a participant joins the cross-write. Honest limit documented in Javadoc: not 2PC — phase-2 interruption leaves committed stores committed (self-consistent), uncommitted ones rolled back, cross-store invariant torn. Owner decision: built with in-repo registry+tenant example, zeroz4j untouched. | Provisioning | the CRM consumer item 2 (a provisioning routine) — **pending** |
-| M5 | Lease failover; GigaMap bridge | Ladder rungs | As needs appear |
-| M6 ✅ 2026-07-27 | **Network server shipped.** `ZeroZDbServer` (owns stores, virtual thread per connection, schema-gated handshake) + `ZeroZDbClient` (`execute(DbCommand)` / `query(DbQuery)`). Wire format is EclipseStore's own `TypedSerializer.Bytes()` — self-describing across JVMs, no extra codec, purity kept. Engine failures cross the wire as their own types (`StaleObjectException`, `UniqueConstraintException`) so retry logic is identical embedded or remote. Verified by a real multi-process harness (§10.1). Not yet built: filesystem auto-discovery (clients take host/port), client-side replica graphs, write-queue. | "Point two JVMs, don't worry" | Multi-JVM stress harness in-repo |
-| M7a ✅ 2026-07-27 | **Auto-server + failover** (§1.1 rungs 2 and 4). `ZeroZDbNode.open(dir, root)`: first JVM owns the store embedded and serves it, publishing `zerozdb.endpoint` beside the data; later JVMs discover and join as clients; `DbCommand`/`DbQuery` run identically in either role. On losing the owner a node transparently reconnects to a new owner or **promotes itself**, retrying the in-flight call so callers see a slow call, not a failure. `allowPromotion(false)` gives the dedicated-server shape (app JVMs may never own data). Proven by `FailoverStress`: hard-kill the owner JVM mid-flight, survivors elect a new owner and no acknowledged write is lost (§10.2). | The product promise | Failover harness in-repo |
-| M7b ✅ 2026-07-28 | **Replica reads** (§1.1 rung 3). `ReplicaView` keeps a local copy of a remote store's graph, refreshed by a long poll (`AwaitCommit`) that returns the instant the owner commits; snapshots swap atomically so readers never see a torn graph. `node.localReads()` gives the same heap-speed read API in either role — live graph on an owner, replica on a client. **Measured: 130 ns per local read vs 368 µs per remote query — 2835×.** Scope limit, stated in the Javadoc: refresh ships a whole snapshot, so cost is O(graph) per change batch, right for read-heavy/modest-write and wrong for a large graph under constant writes. Incremental diff shipping remains future work. Client write-queue also still unbuilt (the node's retry-on-recover covers short outages). | Read scale-out | Replica speed + consistency tests in-repo |
+Everything in this document is implemented unless explicitly marked otherwise, and covered by 107
+tests including multi-process harnesses that kill JVMs mid-write and verify invariants across
+process boundaries.
 
-Each milestone is independently shippable and independently abandonable — the feasibility bet is
-never more than one milestone deep.
+**The engine:** write-blocks and span-style transactions, atomic durable commits with the fsync
+EclipseStore omits, in-memory rollback from before-images, maintained indexes with unique
+constraints enforced pre-commit, stale-edit detection, and cross-store writes with total-order
+locking.
 
-## 10. Stress harness and measured behaviour (added 2026-07-27)
+**The network layer:** a server executing command and query objects, auto-discovery, self-promoting
+failover, client-side replicas reading at heap speed, per-store schema negotiation, a standalone
+daemon, an operations console, and cross-host ownership by renewable lease.
+
+**Deliberately not built**, each for a reason given in the text above: incremental replication
+(§1.1 — refresh ships whole snapshots, which suits read-heavy stores), a client-side write queue,
+store eviction, per-client authorisation, and metrics beyond the console overview.
+
+A rule held throughout: **no feature landed without a consuming application changing alongside
+it.** That is what kept the API shaped by use rather than by speculation, and it is why several
+sections below record corrections rather than plans.
+
+
+## 10. Stress harness and measured behaviour 
 
 `src/test/java/org/zeroz4j/db/stress/` is a test *application*, not a unit test: N Loom
 virtual-thread clients hammer a live engine with four mixed workloads, each carrying an
@@ -770,12 +774,12 @@ Reading these honestly:
 - **The single-writer ceiling is now quantified:** ~2.4k commits/s buffered, ~280/s synced, per
   store. Since stores are independent, a 136-tenant deployment multiplies this by store count.
 - **Store open ≈ 150 ms** for a small store — the first real datum for the failover-window
-  question inherited from the the CRM consumer multi-JVM proposal (§7.2 there). Still needs measuring at
+  question inherited from the CRM consumer multi-JVM proposal (§7.2 there). Still needs measuring at
   realistic store sizes.
 - Every invariant held in every run, including under deliberate unique-constraint contention
   and cross-store writes.
 
-### 10.1 Multi-JVM harness (added 2026-07-27)
+### 10.1 Multi-JVM harness 
 
 `MultiJvmStress` orchestrates a genuine multi-process run: one **server JVM** owning the store
 (`ServerMain`) and N **client JVMs** (`ClientMain`), each opening several connections and
@@ -808,7 +812,7 @@ stdout after the readiness line, its pipe buffer filled, and the server blocked 
 write. The fix is a dedicated drain thread. Recorded because the symptom is indistinguishable
 from an engine hang and cost a debugging round.
 
-### 10.2 Failover harness (added 2026-07-27)
+### 10.2 Failover harness 
 
 `FailoverStress` starts N JVMs on one store in auto-server mode, lets them work, then
 **hard-kills the owner mid-flight** and watches what the survivors do.
@@ -831,7 +835,7 @@ Two honest notes:
 - Requests in flight at the instant of the kill fail and are retried by the node; unacknowledged
   writes may or may not have landed, exactly as with any database.
 
-### 10.3 Replica measurements (added 2026-07-28)
+### 10.3 Replica measurements 
 
 The design's central claim is that shipping *commits* rather than *objects-per-access* keeps
 EclipseStore's speed in a client-server topology. Measured on one node pair, same machine:
@@ -856,17 +860,20 @@ Verified alongside the number, because speed without correctness is worthless:
 
 ## 9. Open questions
 
-1. ~~V1 (durability)~~ — resolved; see §5.3. ES never fsyncs natively; `Durability.SYNC`
-   (default) adds it via a wrapped `NioIoHandler`.
-2. ~~Name~~ — resolved 2026-07-27: `zerozdb` / ZeroZ DB (family plan; framework may later
-   become `zeroz4j-app`). Note `zeroz4j-store-*` remains the framework's storage SPI naming —
-   distinct on purpose.
-3. **License/visibility.** Private tooling, or eventual open source? Affects only repo hygiene
-   now, but cheaper to decide early.
-4. **zeroz4j virtual threads:** `ReentrantReadWriteLock` parks virtual threads safely (it's
-   `LockSupport`-based), but the 15-second background write in `JobServiceImpl` inside one write
-   block would starve readers — the write-block guidance ("short blocks, compute outside, mutate
-   inside") needs to be in the API docs from day one.
-5. **the CRM consumer sequencing:** its transaction design is awaiting sign-off. Building M1 *as* that
-   design's implementation (in zerozdb, consumed by the CRM consumer) avoids doing the work twice — but that
-   sign-off is the owner's call, in the the CRM consumer context.
+1. **Read isolation is only half closed.** Writers serialise, but a host framework that reads the
+   graph directly rather than through `db.read(...)` is not excluded from a transaction in flight.
+   Closing it fully means routing every read through the engine, which is a large change for a
+   symptom nobody has reported; it is recorded here rather than pretended away.
+2. **Long write-blocks starve readers.** The lock is fair, so a block that holds the write lock for
+   seconds blocks every reader for that long. The guidance — compute outside the block, mutate
+   inside — belongs in the API docs, but nothing enforces it.
+3. **Incremental replication.** Refresh currently ships a whole snapshot. Shipping the commit's
+   changed objects instead would make replica cost proportional to change rather than to graph
+   size, at the price of owning a replication protocol — a class of code where bugs destroy data
+   quietly. Deliberately deferred until a real read-scale-out need exists.
+4. **Storage-level fencing.** Lease-based ownership leaves one window: a process frozen beyond its
+   lease could resume mid-write. Closing it needs the storage layer to reject writes carrying a
+   stale epoch, which EclipseStore's file format does not offer.
+5. **Per-client identity.** Authentication is one shared secret per server. Per-client identities
+   and per-store authorisation are unbuilt, which rules out multi-tenant server deployments where
+   clients should not see each other's stores.

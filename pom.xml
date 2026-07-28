@@ -156,6 +156,16 @@
                                 <id>sign-artifacts</id>
                                 <phase>verify</phase>
                                 <goals><goal>sign</goal></goals>
+                                <configuration>
+                                    <!-- GnuPG 2.x refuses a passphrase supplied on the command
+                                         line unless loopback pinentry is enabled. Without this,
+                                         a release from a script or CI hangs waiting for a
+                                         dialog that never appears. -->
+                                    <gpgArguments>
+                                        <arg>--pinentry-mode</arg>
+                                        <arg>loopback</arg>
+                                    </gpgArguments>
+                                </configuration>
                             </execution>
                         </executions>
                     </plugin>
@@ -166,7 +176,10 @@
                     <plugin>
                         <groupId>org.sonatype.central</groupId>
                         <artifactId>central-publishing-maven-plugin</artifactId>
-                        <version>0.7.0</version>
+                        <!-- 0.7.0 could not parse the portal's response: Sonatype added a
+                             'warnings' field the older client rejects, so the upload succeeded
+                             and then the build failed while reading validation status. -->
+                        <version>0.11.0</version>
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
