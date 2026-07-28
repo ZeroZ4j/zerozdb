@@ -54,6 +54,61 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
             </plugin>
+
+            <!-- API documentation. The classes carry the reasoning as well as the contract, so
+                 the generated javadoc is a genuine reference rather than a signature dump.
+                 Build with: mvn javadoc:javadoc   (output in target/reports/apidocs)
+                 Attach a jar to a release with: mvn package -Prelease -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>3.11.2</version>
+                <configuration>
+                    <doctitle>ZeroZ DB ${project.version} API</doctitle>
+                    <windowtitle>ZeroZ DB ${project.version}</windowtitle>
+                    <bottom><![CDATA[Copyright &#169; 2026 Franz Sch&#246;ning &#8212;
+                        <a href="https://www.zeroz4j.com">zeroz4j.com</a> &#8212;
+                        <a href="https://www.franzschoning.com">Principal Enterprise Architect</a>]]></bottom>
+                    <links>
+                        <link>https://docs.oracle.com/en/java/javase/21/docs/api/</link>
+                    </links>
+                    <!-- Javadoc's strict HTML checks fail on prose that is otherwise fine. -->
+                    <doclint>none</doclint>
+                    <notimestamp>true</notimestamp>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>3.3.1</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals><goal>jar-no-fork</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.11.2</version>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals><goal>jar</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

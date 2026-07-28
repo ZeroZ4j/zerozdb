@@ -1,0 +1,45 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "ZeroZ DB",
+  "description": "Pure-Java database over EclipseStore: your plain Java objects are the database. Adds serialized atomic transactions, crash durability, maintained indexes and unique constraints, stale-edit detection, cross-store writes, a network server with client-side replicas, and schema-evolution safety. No mapping layer, no query language, no SQL.",
+  "branch": "main",
+  "folders": [
+    "docs/**"
+  ],
+  "excludeFolders": [
+    "target",
+    ".idea",
+    ".github",
+    ".mvn"
+  ],
+  "excludeFiles": [
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "rules": [
+    "ZeroZ DB requires JDK 21 or later (virtual threads). It is not yet published to a Maven repository: clone and 'mvn install', then depend on com.zeroz4j:zerozdb:0.1.0-SNAPSHOT. The entry class is com.zeroz4j.db.ZeroZDb.",
+    "Storing an object does not cascade into objects it references. This is EclipseStore's rule and ZeroZ DB keeps it: enlist every level you changed. Changing root.products and root.nextId means ctx.store(root) AND ctx.store(root.products). Enlisting only the root silently loses the map's changes.",
+    "All writes go inside a write-block: db.write(ctx -> {...}) returns nothing, db.writeResult(ctx -> {...}) returns a value. They are separate methods because Java cannot disambiguate the overloads for a lambda ending in throw. Everything enlisted in a block lands in one atomic commit that is on disk before the call returns.",
+    "Prefer ctx.edit(obj) BEFORE mutating an object, and ctx.store(obj) after. Both enlist, but rollback restores from a snapshot taken at enlistment, so a snapshot taken after the change already contains the change.",
+    "Never start a write inside db.read(...). A read lock cannot be upgraded to a write lock, so the attempt would deadlock against itself; the engine detects this and throws IllegalStateException instead of hanging. Reading inside a write is fine - that is a downgrade, which the lock supports.",
+    "Durability.SYNC is the default and adds the fsync EclipseStore does not perform itself, so an acknowledged write survives power loss. Durability.OS_BUFFERED is EclipseStore's native behaviour: survives process death but not a power cut, roughly 10x faster. Use OS_BUFFERED only for bulk imports and rebuildable data.",
+    "DbCommand and DbQuery implementations must be plain classes with public fields and a public no-arg constructor, never records. EclipseStore's serializer reaches fields directly and the JVM refuses that for records unless started with --add-exports java.base/jdk.internal.misc=ALL-UNNAMED. The failure is a runtime 'Could not obtain access to jdk.internal.misc.Unsafe' at the first remote call, not a compile error.",
+    "Remote work travels as command and query objects rather than lambdas, because the executing JVM must have the code. DbCommand/DbQuery classes therefore live in a jar that both the client and the server load, and the server is versioned in lock-step with that model jar.",
+    "One ZeroZDb instance per store, never a singleton over many stores. Writes are serialized per store, so one writer per store is the throughput ceiling (~2.4k commits/s buffered, ~280/s synced on a dev laptop); stores are independent, so N stores multiply that.",
+    "CrossStoreWrite.run(block, storeA, storeB) makes several stores atomic together, taking locks in a total order so concurrent cross-writes cannot deadlock. Every participant must be a store THIS JVM owns - a store served by another JVM cannot join. It is not distributed 2PC: process death between two participants' commits leaves the earlier ones committed.",
+    "When an operation spans a private store and a shared one, do the multi-store work locally and touch the shared store exactly once, last, and idempotently. Then a failure between the steps leaves the result invisible rather than half-visible, and a retry is safe.",
+    "Indexes are registered with db.index(name, type, sourceSupplier, keyFn) or db.uniqueIndex(...) over a source Map or Collection reachable from the root. Registration scans once and the index is then maintained at every commit. A unique violation throws UniqueConstraintException BEFORE anything is persisted and the whole write-block rolls back.",
+    "Stale-edit detection is opt-in per call site: capture long baseline = db.baseline(obj) when the edit BEGINS (for example when a form opens), then ctx.storeChecked(obj, baseline) at save. Capturing the baseline at first mutation defeats the purpose, because the conflict window is think-time. Plain ctx.store remains last-write-wins, and objects are version-tracked only from their first baseline call.",
+    "ZeroZDbNode is the API that works in every deployment mode: EMBEDDED (owns the store, no socket, one copy of the graph), AUTO_SERVER (owns and serves it if free, otherwise joins the owner and can promote itself), CLIENT_ONLY (never owns data). execute, query and localReads behave identically in all three, so application code is written once. localDb() returns the engine for lambda write-blocks and index registration and is present only where the node owns its data.",
+    "A client's node.localReads() returns a replica refreshed the instant the owner commits, so reads are heap-speed (~130 ns) but stale by up to one refresh. When a read must be exactly current - permission and security checks especially - use node.query(...), which always executes on the owner.",
+    "Schema evolution defaults to SchemaEvolution.strict(): only same-name fields are matched, so a renamed field arrives unset rather than being silently filled from an unrelated field of the same type. This is a deliberate divergence from EclipseStore, whose lenient matching pairs leftover fields by type and can teleport data between unrelated fields. Declare renames explicitly with SchemaEvolution.strict().rename(\"com.x.Product#sku\", \"com.x.Product#code\").",
+    "Adding fields keeps rollback possible - an older build can still read data a newer one wrote. Removing or retyping a field does not, from the moment the new release rewrites its first record. Gate the build with SchemaCompatibility.check(baselineFile, classes) against a committed SchemaDescriptor baseline, and regenerate the baseline deliberately in the same commit when a change is intended.",
+    "ZeroZDb.attach(manager) uses the caller's existing storage configuration: durability and schema-evolution settings passed to ZeroZDb.open(...) do not apply, because the storage manager already exists. Use ZeroZDb.openUnguarded(...) when an OwnershipArbiter already holds the exclusive claim, otherwise the store's own file lock collides with it inside the same JVM.",
+    "For frameworks whose API is begin()/commit() rather than a lambda, db.beginWrite() returns a WriteTransaction with the same guarantees. Always use try-with-resources: close() rolls back an unfinished transaction, so a forgotten commit cannot leave the store's write lock held. A nested beginWrite joins the outer transaction and a nested rollback poisons the outer commit.",
+    "The server binds to 127.0.0.1 by default and refuses to start on any other interface without a secret, because a reachable server with no authentication lets anyone who can open a socket read and write the data. Add TLS with Tls.server(keystore, password) for anything off-host, and use LeaseFileArbiter instead of the default file lock on shared or network volumes, where OS file locks are unreliable.",
+    "The operations console (ConsoleServer) is read-only, off unless started, and loopback-only unless given a password. It browses the object graph by field name, runs only the named queries an application publishes through QueryCatalog, and diffs the running model against the committed schema baseline.",
+    "Known limits to design around: a store must fit the heap (EclipseStore Lazy references mitigate); there is no store eviction yet, so a process that opens thousands of stores holds them all; replication ships whole snapshots, so refresh cost is O(graph) per change batch and suits read-heavy stores; authentication is one shared secret per server with no per-client identity; and there are no metrics beyond the console overview.",
+    "ZeroZ DB is version 0.1.0 and the API may still move. Settled by real use: ZeroZDb, WriteContext, WriteTransaction, Durability, Index/UniqueIndex, CrossStoreWrite. Newer and more likely to change: ZeroZDbNode, ReplicaView, ConsoleServer, the lease arbiters, SchemaPolicy and StoreSchema. Treat anything not documented in docs/Guide.md as internal even where it is public."
+  ]
+}

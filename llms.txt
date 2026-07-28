@@ -1,0 +1,44 @@
+# ZeroZ DB
+
+> A pure-Java database over EclipseStore (version 0.1.0). Your plain Java objects are the
+> database: a graph hangs off a root object, EclipseStore persists it, and ZeroZ DB adds what a
+> real database needs — serialized atomic transactions, crash durability, maintained indexes and
+> unique constraints, conflict detection, cross-store writes, an optional network server, and
+> schema-evolution safety. There is no mapping layer, no query language and no SQL.
+
+Key things to know before generating ZeroZ DB code:
+
+- Requires JDK 21. Not published to a repository yet: clone and `mvn install`, then depend on
+  `com.zeroz4j:zerozdb:0.1.0-SNAPSHOT`. Entry class `com.zeroz4j.db.ZeroZDb`.
+- **Enlisting does not cascade.** `ctx.store(obj)` covers that object only. Changing a root field
+  *and* a map hanging off it needs both enlisted. This is the single most common mistake.
+- Writes go inside `db.write(ctx -> …)` (void) or `db.writeResult(ctx -> …)` (returns a value).
+  Everything enlisted lands in one atomic commit that is on disk when the call returns.
+- Prefer `ctx.edit(obj)` *before* mutating and `ctx.store(obj)` after: rollback restores the
+  snapshot taken at enlistment.
+- Never start a write inside `db.read(...)`. A read lock cannot be upgraded, so the engine throws
+  rather than deadlocking.
+- **Commands and queries must be plain classes, never records.** EclipseStore's serializer reaches
+  fields directly and the JVM refuses that for records without an `--add-exports` flag. It fails at
+  the first remote call, not at compile time.
+- `ZeroZDbNode` gives the same API in three deployment modes — EMBEDDED, AUTO_SERVER and
+  CLIENT_ONLY — so application code is written once and the deployment shape is a configuration
+  choice.
+- Replica reads through `node.localReads()` are heap-speed but stale by up to one refresh. Use
+  `node.query(...)` when a read must be exactly current, security checks especially.
+- Schema matching is **strict** by default: a renamed field arrives unset rather than being filled
+  from an unrelated field of the same type. Declare renames explicitly.
+- Adding fields keeps rollback possible; removing or retyping them does not. Gate the build with
+  `SchemaCompatibility`.
+
+## Documentation
+
+- [Developer guide](docs/Guide.md): getting started, writing, reading, indexes, concurrent edits,
+  multiple stores, multiple JVMs, the standalone server, schema changes, the console. Ends with an
+  API-stability statement and the known limits.
+- [Quickstart](docs/start/quickstart.md): the smallest working program.
+- [Troubleshooting](docs/guides/troubleshooting.md): the failure modes that are silent or
+  misleading, and what each one actually means.
+- [Limitations](docs/reference/limitations.md): what this database is not for.
+- [Design journal](docs/Feasibility-And-Design.md): why it is built this way, the rejected
+  alternatives, the measurements, and the things that turned out to be wrong.
