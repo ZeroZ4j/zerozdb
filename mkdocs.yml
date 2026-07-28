@@ -2,7 +2,7 @@ site_name: ZeroZ DB
 site_description: >-
   Pure-Java database over EclipseStore: your plain Java objects are the database, with atomic
   transactions, crash durability, indexes, constraints and an optional network server.
-site_url: https://docs.zerozdb.com/
+site_url: https://db.zeroz4j.com/
 repo_url: https://github.com/ZeroZ4j/zerozdb
 repo_name: ZeroZ4j/zerozdb
 edit_uri: edit/main/docs/
