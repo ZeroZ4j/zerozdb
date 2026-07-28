@@ -38,8 +38,13 @@ later, without repeating any of this.
 
 ## 3. Generate a publishing token
 
-In the portal: **your name** → **View Account** → **Generate User Token**. It shows a username and
-password pair *once*.
+In the portal: **your name** (top-right) → **View Account** → **Generate User Token**. It shows a
+username and password pair *once*, so copy both before closing the dialog.
+
+If it asks for a token name, that is only a label. Name it after **where the token will live**, not
+what it publishes: a token is account-wide and can publish to every namespace you own, so
+`laptop-maven` or `github-actions` tells you what to revoke later, while `zerozdb` stops being true
+the moment ZeroZ Stack is released with the same token.
 
 Put them in `~/.m2/settings.xml`:
 
