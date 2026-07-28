@@ -64,8 +64,8 @@ boundary would give you a worse Postgres rather than a better ZeroZ DB.
 ## Status
 
 Version 0.1.0, 107 tests, proven against one real consumer application. The API may still move in
-0.x — the [guide](Guide.md) says which parts are settled and which are not. Not yet published to
-Maven Central; build locally with `mvn install`.
+0.x — the [guide](Guide.md) says which parts are settled and which are not. Available from Maven
+Central as `com.zeroz4j:zerozdb:0.1.0`.
 
 Part of the **ZeroZ4J** family alongside [ZeroZ Stack](https://github.com/ZeroZ4j/zerozstack),
 the pure-Java full-stack framework.

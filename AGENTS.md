@@ -22,8 +22,8 @@ mvn test             # 107 tests, about two minutes
 mvn javadoc:javadoc  # API docs into target/reports/apidocs
 ```
 
-Not published to a Maven repository yet, so consumers must `mvn install` first, then depend on
-`com.zeroz4j:zerozdb:0.1.0`.
+Published to Maven Central as `com.zeroz4j:zerozdb:0.1.0`. Building locally is only needed when
+working on the library itself.
 
 The suite includes multi-process harnesses that spawn child JVMs, kill them mid-write and verify
 invariants across process boundaries. They take longer than unit tests and are worth the wait; do

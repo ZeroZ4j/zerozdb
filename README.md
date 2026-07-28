@@ -25,8 +25,18 @@ patterns, the API-stability statement and the known limits.
 
 Also: [CHANGELOG.md](CHANGELOG.md) · [design journal and rationale](docs/Feasibility-And-Design.md).
 
-Status: **0.1.0, not yet published to a repository** — `mvn install` locally to depend
-on it. 104 tests. Proven against one real consumer application; the API may still move in 0.x.
+Available from Maven Central:
+
+```xml
+<dependency>
+    <groupId>com.zeroz4j</groupId>
+    <artifactId>zerozdb</artifactId>
+    <version>0.1.0</version>
+</dependency>
+```
+
+Requires JDK 21+. 107 tests. Proven against one real consumer application; the API may still move
+in 0.x — see [the guide](docs/Guide.md) for which parts are settled.
 
 ## Build
 

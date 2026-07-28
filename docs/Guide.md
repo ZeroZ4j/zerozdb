@@ -10,12 +10,7 @@ Version 0.1.0. See [API stability](#api-stability) before depending on anything.
 
 ## 1. Getting it
 
-Not yet on Maven Central (see [RELEASING.md](../RELEASING.md)). Until then, build and install locally:
-
-```bash
-git clone https://github.com/zeroz4j/zerozdb.git
-cd zerozdb && mvn install
-```
+From Maven Central:
 
 ```xml
 <dependency>
@@ -23,6 +18,13 @@ cd zerozdb && mvn install
     <artifactId>zerozdb</artifactId>
     <version>0.1.0</version>
 </dependency>
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/ZeroZ4j/zerozdb.git
+cd zerozdb && mvn install
 ```
 
 Requires **JDK 21+** (virtual threads). Brings in `org.eclipse.store:storage-embedded` and

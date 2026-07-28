@@ -4,12 +4,7 @@ The smallest working ZeroZ DB program, and the three rules that matter.
 
 ## 1. Depend on it
 
-Not published to a repository yet, so build it once:
-
-```bash
-git clone https://github.com/zeroz4j/zerozdb.git
-cd zerozdb && mvn install
-```
+Add the dependency:
 
 ```xml
 <dependency>
