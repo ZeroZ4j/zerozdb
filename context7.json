@@ -18,7 +18,7 @@
     "NOTICE"
   ],
   "rules": [
-    "ZeroZ DB requires JDK 21 or later (virtual threads). It is not yet published to a Maven repository: clone and 'mvn install', then depend on com.zeroz4j:zerozdb:0.1.0-SNAPSHOT. The entry class is com.zeroz4j.db.ZeroZDb.",
+    "ZeroZ DB requires JDK 21 or later (virtual threads). It is not yet published to a Maven repository: clone and 'mvn install', then depend on com.zeroz4j:zerozdb:0.1.0. The entry class is com.zeroz4j.db.ZeroZDb.",
     "Storing an object does not cascade into objects it references. This is EclipseStore's rule and ZeroZ DB keeps it: enlist every level you changed. Changing root.products and root.nextId means ctx.store(root) AND ctx.store(root.products). Enlisting only the root silently loses the map's changes.",
     "All writes go inside a write-block: db.write(ctx -> {...}) returns nothing, db.writeResult(ctx -> {...}) returns a value. They are separate methods because Java cannot disambiguate the overloads for a lambda ending in throw. Everything enlisted in a block lands in one atomic commit that is on disk before the call returns.",
     "Prefer ctx.edit(obj) BEFORE mutating an object, and ctx.store(obj) after. Both enlist, but rollback restores from a snapshot taken at enlistment, so a snapshot taken after the change already contains the change.",

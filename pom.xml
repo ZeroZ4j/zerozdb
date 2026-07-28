@@ -6,12 +6,49 @@
 
     <groupId>com.zeroz4j</groupId>
     <artifactId>zerozdb</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
     <packaging>jar</packaging>
 
     <name>ZeroZ DB</name>
     <description>Zero-impedance pure-Java database over EclipseStore: serialized write-blocks,
         atomic durable commits, concurrent reads.</description>
+    <url>https://github.com/ZeroZ4j/zerozdb</url>
+
+    <licenses>
+        <license>
+            <name>The Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>fschoning</id>
+            <name>Franz Schöning</name>
+            <url>https://www.franzschoning.com</url>
+            <roles>
+                <role>Principal Enterprise Architect</role>
+            </roles>
+        </developer>
+    </developers>
+
+    <organization>
+        <name>ZeroZ4J</name>
+        <url>https://www.zeroz4j.com</url>
+    </organization>
+
+    <scm>
+        <connection>scm:git:https://github.com/ZeroZ4j/zerozdb.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/ZeroZ4j/zerozdb.git</developerConnection>
+        <url>https://github.com/ZeroZ4j/zerozdb</url>
+        <tag>HEAD</tag>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub Issues</system>
+        <url>https://github.com/ZeroZ4j/zerozdb/issues</url>
+    </issueManagement>
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
@@ -106,6 +143,36 @@
                                 <goals><goal>jar</goal></goals>
                             </execution>
                         </executions>
+                    </plugin>
+
+                    <!-- Central requires every artifact to be signed. The key is yours; see
+                         docs/publishing.md for generating and distributing it. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.7</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals><goal>sign</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Uploads to the Central Portal (central.sonatype.com). autoPublish is
+                         false deliberately: the first releases should be inspected in the portal
+                         before they go out, because a published version can never be replaced. -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.7.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>false</autoPublish>
+                            <waitUntil>validated</waitUntil>
+                        </configuration>
                     </plugin>
                 </plugins>
             </build>

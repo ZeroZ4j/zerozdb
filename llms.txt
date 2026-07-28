@@ -9,7 +9,7 @@
 Key things to know before generating ZeroZ DB code:
 
 - Requires JDK 21. Not published to a repository yet: clone and `mvn install`, then depend on
-  `com.zeroz4j:zerozdb:0.1.0-SNAPSHOT`. Entry class `com.zeroz4j.db.ZeroZDb`.
+  `com.zeroz4j:zerozdb:0.1.0`. Entry class `com.zeroz4j.db.ZeroZDb`.
 - **Enlisting does not cascade.** `ctx.store(obj)` covers that object only. Changing a root field
   *and* a map hanging off it needs both enlisted. This is the single most common mistake.
 - Writes go inside `db.write(ctx -> …)` (void) or `db.writeResult(ctx -> …)` (returns a value).

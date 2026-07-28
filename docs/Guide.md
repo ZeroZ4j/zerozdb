@@ -4,13 +4,13 @@ For someone building an application against ZeroZ DB. The
 [feasibility and design document](Feasibility-And-Design.md) explains *why* it is built this way;
 this explains *how to use it*.
 
-Version 0.1.0-SNAPSHOT. See [API stability](#api-stability) before depending on anything.
+Version 0.1.0. See [API stability](#api-stability) before depending on anything.
 
 ---
 
 ## 1. Getting it
 
-Not published to a repository yet. Build and install locally:
+Not yet on Maven Central (see [publishing.md](publishing.md)). Until then, build and install locally:
 
 ```bash
 git clone https://github.com/zeroz4j/zerozdb.git
@@ -21,7 +21,7 @@ cd zerozdb && mvn install
 <dependency>
     <groupId>com.zeroz4j</groupId>
     <artifactId>zerozdb</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 ```
 

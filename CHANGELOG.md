@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0-SNAPSHOT (unreleased)
+## 0.1.0 (unreleased)
 
 First working version. Built 2026-07-27/28 and proven against a real consumer application, which
 is where several of the corrections below came from.

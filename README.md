@@ -25,7 +25,7 @@ patterns, the API-stability statement and the known limits.
 
 Also: [CHANGELOG.md](CHANGELOG.md) · [design journal and rationale](docs/Feasibility-And-Design.md).
 
-Status: **0.1.0-SNAPSHOT, not yet published to a repository** — `mvn install` locally to depend
+Status: **0.1.0, not yet published to a repository** — `mvn install` locally to depend
 on it. 104 tests. Proven against one real consumer application; the API may still move in 0.x.
 
 ## Build
