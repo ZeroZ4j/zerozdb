@@ -1,6 +1,52 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.2.0
+
+Diagnostics for a write-block that was never ended. Reported by a consumer application on
+2026-08-08: `close()` parked for ever on a leaked write transaction, with no log line, no
+exception and no way to ask who held the lock. The leak was the consumer's; the silence was ours.
+
+### Engine
+- **`close()` is bounded.** It waits up to 30 seconds (`ZeroZDb.DEFAULT_CLOSE_TIMEOUT`, or
+  `-Dzerozdb.closeTimeoutSeconds=N`) and then throws `StoreBusyException` naming the thread that
+  holds the block, instead of parking silently for the life of the process. `close(Duration)`
+  takes the timeout per call. On expiry the store stays open: shutting the storage manager down
+  underneath a writer that may yet wake would trade a diagnosable hang for an undiagnosable
+  corruption.
+- **The write-block holder is observable.** `hasOpenWriteBlock()`, `writeBlockOwner()` and
+  `describeLockState()` answer "is a write block open on this store, and who opened it" — the
+  question `isWriteActive()` cannot answer, because it reads a ThreadLocal and so only ever
+  reports on the calling thread. A host can now assert at the end of a request that it left
+  nothing open.
+- **Write-block origins can be traced.** `ZeroZDb.traceWriteBlockOrigins(true)` or
+  `-Dzerozdb.traceWriteBlockOrigins=true` records the stack that opened each block, turning
+  "something leaked a write-block" into the line that leaked it. Off by default.
+- **A leaked `WriteTransaction` reports itself.** One collected without `commit()`, `rollback()`
+  or `close()` logs a warning naming the thread that opened it — what a connection pool does about
+  a leaked connection, for the same reason. Nothing can repair it: only the owning thread can
+  release its write hold, and it has forgotten the transaction exists.
+- **Closing from inside a write-block is refused** rather than shutting the storage manager down
+  underneath the block that is about to commit into it.
+- `lock()` no longer sits outside the `try` that releases it in `writeResult`, `beginWrite` and
+  `beginCross`. A narrow window, but the consequence was the permanent hang above. `beginCross`
+  in particular could leave the lock held if set-up failed after its own guard, and
+  `CrossStoreWrite` would never release it, because a store it failed to begin is not a
+  participant.
+
+### Dependencies
+- **EclipseStore 4.1.0 → 4.2.0** (storage and serializer). No source change was needed and all
+  116 tests pass on it, including the kill-9 durability proof and the multi-JVM harnesses.
+- 4.2.0 fsyncs where 4.1.0 never did, so the durability claim in `Durability`, the README and the
+  design document is now stated more precisely: EclipseStore still does not force the commit path,
+  but it does force the outgoing head file at rollover, and the head plus transactions file before
+  a housekeeping delete. `Durability.SYNC` is still what makes an acknowledged commit survive
+  power loss — the new barriers narrow which *older* files a crash can strand, not which commit.
+
+### Verification
+116 tests. The nine new ones state what a store says while a block is open, when one is leaked,
+and when a transaction is dropped without ending.
+
+## 0.1.0
 
 First working version. Built 2026-07-27/28 and proven against a real consumer application, which
 is where several of the corrections below came from.

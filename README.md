@@ -31,11 +31,11 @@ Available from Maven Central:
 <dependency>
     <groupId>com.zeroz4j</groupId>
     <artifactId>zerozdb</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
 </dependency>
 ```
 
-Requires JDK 21+. 107 tests. Proven against one real consumer application; the API may still move
+Requires JDK 21+. 116 tests. Proven against one real consumer application; the API may still move
 in 0.x — see [the guide](docs/Guide.md) for which parts are settled.
 
 ## Build
@@ -189,7 +189,9 @@ bottleneck — the single writer and fsync are. See
 
 ## Durability note
 
-Plain EclipseStore never calls `fsync` — verified against its 4.1.0 sources — so native commits
-survive process death but not power loss. ZeroZ DB defaults to `Durability.SYNC`, which forces
+Plain EclipseStore does not `fsync` the commit path — verified against its 4.2.0 sources — so
+native commits survive process death but not power loss. (4.2.0 forces at file rollover and
+before a housekeeping delete; neither covers the commit that just returned.) ZeroZ DB defaults
+to `Durability.SYNC`, which forces
 the channel after every storage write; pass `Durability.OS_BUFFERED` to `open(...)` for
 EclipseStore's native (faster, weaker) behavior during bulk loads.

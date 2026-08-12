@@ -20,10 +20,13 @@ package com.zeroz4j.db;
 /**
  * What "the write returned" guarantees about disk state.
  * <p>
- * Verified against EclipseStore 4.1.0 sources: its NIO write path ({@code NioIoHandler} →
+ * Verified against EclipseStore 4.2.0 sources: its commit path ({@code NioIoHandler} →
  * {@code XIO.write}) never calls {@code FileChannel.force}, so plain EclipseStore commits are
  * durable against process death (OS page cache survives) but NOT against power loss or kernel
- * crash. {@link #SYNC} closes that gap by forcing the channel after every storage write.
+ * crash. 4.2.0 does force in a few places 4.1.0 did not — sealing the outgoing head file at
+ * rollover, and the head plus transactions file before a housekeeping delete — but none of them
+ * is on the path of the commit that just returned. {@link #SYNC} closes that gap by forcing the
+ * channel after every storage write.
  */
 public enum Durability {
 

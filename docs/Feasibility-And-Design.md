@@ -155,13 +155,13 @@ store-open time (store-open time is an unmeasured open question, carried over fr
 
 ## 2. What exists already (verified)
 
-### 2.1 EclipseStore itself (v4.1.0, May 2026)
+### 2.1 EclipseStore itself (v4.2.0, the version depended on here)
 
 - **Durable atomic commits.** A `Storer.commit()` is atomic at the storage level; on restart ES
   recovers to the last consistent commit. Crash recovery and online backup are ES's strong suit
   (multi-JVM proposal §2, capabilities 3 and 6: "solved").
-- **The serializer is a standalone artifact** (`org.eclipse.serializer`, used by both consumers and
-  zeroz4j at 4.1.0) — usable for wire transport independent of storage.
+- **The serializer is a standalone artifact** (`org.eclipse.serializer`, versioned in lockstep with
+  storage — 4.2.0 here) — usable for wire transport independent of storage.
 - **`LockedExecutor` / `StripeLockedExecutor`** exist in the serializer artifact — callback-style
   read/write lock wrappers. Verified limitation (a consumer's transaction design): callback-only, no
   lock handle, cannot span begin→commit. Useful shape precedent, not a building block.
@@ -350,12 +350,18 @@ releasing the write lock and returning. ES's commit is atomic — a crash mid-co
 the pre-block state; combined with the single flush point, a write-block is all-or-nothing on
 disk.
 
-**Verified against EclipseStore 4.1.0 sources: it never fsyncs.**
-Its write path (`NioIoHandler.specificWriteBytes` → `XIO.write`) does plain channel writes; the
-one fsync-capable method in the codebase (`XIO.appendAllGuaranteed`, containing
-`fileChannel.force(false)` with the comment "this is the right place for a data-safety-securing
-force/flush") has **zero callers**. Native ES durability is therefore process-death-only; a
-power cut can lose acknowledged commits still in the OS page cache. zerozdb closes the gap:
+**Verified against EclipseStore 4.2.0 sources: it does not fsync the commit path.**
+Its write path (`NioIoHandler.specificWriteBytes` → `XIO.write`) does plain channel writes.
+4.2.0 added an fsync capability that 4.1.0 did not have — `NioIoHandler.specificSynchronize`
+calls `fileChannel().force(true)`, reached through `StorageFile.synchronize()` — but its callers
+are all housekeeping barriers, never a commit: `StorageFileManager.createNextStorageFile` seals
+the outgoing head at rollover, `StorageFileManager` forces the head and transactions files before
+a transferred source file is unlinked, and `StorageTransactionsFileCleaner` forces around
+transactions-file maintenance. (In 4.1.0 there was no fsync at all: the one fsync-capable method,
+`XIO.appendAllGuaranteed`, had **zero callers**.) Native ES durability for an acknowledged commit
+is therefore still process-death-only; a power cut can lose commits still in the OS page cache,
+and the new barriers narrow which *older* files can be stranded rather than protecting the latest
+one. zerozdb closes the gap:
 `Durability.SYNC` (the default) wires `NioFileSystem.New(SyncedIo.wrap(NioIoHandler.New()))`
 into the foundation — a delegating handler that follows every `writeBytes` with
 `force(false)` (fdatasync semantics, the same call ES's own unused method makes).

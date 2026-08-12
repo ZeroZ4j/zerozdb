@@ -6,7 +6,7 @@
 
     <groupId>com.zeroz4j</groupId>
     <artifactId>zerozdb</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
     <packaging>jar</packaging>
 
     <name>ZeroZ DB</name>
@@ -53,7 +53,7 @@
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <eclipsestore.version>4.1.0</eclipsestore.version>
+        <eclipsestore.version>4.2.0</eclipsestore.version>
         <junit.version>5.11.4</junit.version>
     </properties>
 

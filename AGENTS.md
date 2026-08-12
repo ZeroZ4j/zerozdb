@@ -3,7 +3,7 @@
 Instructions for AI coding agents. Humans should start at [README.md](README.md) and
 [docs/Guide.md](docs/Guide.md).
 
-ZeroZ DB is a pure-Java database over [EclipseStore](https://eclipsestore.io) at version **0.1.0**.
+ZeroZ DB is a pure-Java database over [EclipseStore](https://eclipsestore.io) at version **0.2.0**.
 Plain Java objects hanging off a root object *are* the database; ZeroZ DB adds serialized atomic
 transactions, crash durability, maintained indexes and unique constraints, conflict detection,
 cross-store writes, an optional network server, and schema-evolution safety. There is no mapping
@@ -18,11 +18,11 @@ Requires **JDK 21** (virtual threads) and Maven 3.9+.
 
 ```bash
 mvn install          # build and install locally
-mvn test             # 107 tests, about two minutes
+mvn test             # 116 tests, about two minutes
 mvn javadoc:javadoc  # API docs into target/reports/apidocs
 ```
 
-Published to Maven Central as `com.zeroz4j:zerozdb:0.1.0`. Building locally is only needed when
+Published to Maven Central as `com.zeroz4j:zerozdb:0.2.0`. Building locally is only needed when
 working on the library itself.
 
 The suite includes multi-process harnesses that spawn child JVMs, kill them mid-write and verify
@@ -48,6 +48,12 @@ taken at enlistment, so one taken afterwards already contains the change.
 **Never start a write inside `db.read(...)`.** A read lock cannot be upgraded, so it would deadlock
 against itself; the engine throws instead. Reading inside a write is fine — that is a downgrade.
 
+**A `beginWrite()` transaction must always be ended**, and try-with-resources is how. Leaking one
+holds the store's write lock for the life of the process: no further writes, and `close()` fails
+with `StoreBusyException` after 30 seconds. `hasOpenWriteBlock()`, `writeBlockOwner()` and
+`describeLockState()` answer who holds it — `isWriteActive()` reads a ThreadLocal and only ever
+answers for the calling thread.
+
 **`DbCommand` and `DbQuery` must be plain classes, never records.** EclipseStore's serializer
 reaches fields directly and the JVM refuses that for records without
 `--add-exports java.base/jdk.internal.misc=ALL-UNNAMED`. It fails at the first remote call, not at
@@ -63,7 +69,9 @@ between unrelated fields with no error.
 
 - `com.zeroz4j.db` — the engine. `ZeroZDb` is the entry point; `WriteContext` and
   `WriteTransaction` are the write API; `Snapshots` provides before-images; `IndexImpl` maintains
-  indexes at commit; `SyncedIo` adds the fsync EclipseStore omits.
+  indexes at commit; `SyncedIo` adds the fsync EclipseStore omits; `WriteHold` and
+  `WriteBlockLeakWatch` say who holds the write lock and complain when a transaction is dropped
+  without ending.
 - `com.zeroz4j.db.net` — the network layer. `ZeroZDbServer` executes commands against the live
   graph, `ZeroZDbClient` sends them, `ZeroZDbNode` presents one API across EMBEDDED, AUTO_SERVER
   and CLIENT_ONLY modes, and `ReplicaView` keeps a client's local copy fresh.

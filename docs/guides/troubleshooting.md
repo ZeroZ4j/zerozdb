@@ -33,6 +33,33 @@ You called `db.write(...)` or `db.beginWrite()` inside `db.read(...)`. A read lo
 upgraded to a write lock, so this would deadlock against itself; the engine throws instead. Move
 the write outside the read block.
 
+## Closing a store does not return
+
+It does now — it throws `StoreBusyException` after 30 seconds and names the thread holding the
+write lock. Read that message: it says which thread opened the block, what kind it was, and how
+long ago.
+
+Almost always a **leaked write transaction**: a `beginWrite()` whose `commit()`, `rollback()` or
+`close()` never ran, typically because a host framework's `begin()`/`commit()` layer sits on top of
+it. The write lock stays held until the process ends, and only the thread that took it could
+release it, so the store can no longer be written to or closed.
+
+```
+Cannot close store /data/tenant-7: gave up after 30.0 s waiting for the write lock. ...
+Holding it: a write transaction opened by thread "main" (id 1) 92.4 s ago and is still open.
+```
+
+To find the line that leaked it, restart with `-Dzerozdb.traceWriteBlockOrigins=true`; every such
+message then carries the stack that opened the block. To catch it at the point it happens rather
+than at close, assert `db.hasOpenWriteBlock()` is false at the end of each request.
+
+If instead the block is genuine — a bulk import that really does take longer than 30 seconds —
+call `db.close(Duration.ofMinutes(5))`, or raise the default with
+`-Dzerozdb.closeTimeoutSeconds=300`.
+
+The store is left open when the wait expires. Shutting the storage manager down underneath a
+writer that might still wake up would trade a diagnosable hang for an undiagnosable corruption.
+
 ## "Could not obtain access to jdk.internal.misc.Unsafe"
 
 Your `DbCommand` or `DbQuery` is a **record**. EclipseStore's serializer reaches fields directly,

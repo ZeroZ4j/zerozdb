@@ -4,7 +4,7 @@ For someone building an application against ZeroZ DB. The
 [feasibility and design document](Feasibility-And-Design.md) explains *why* it is built this way;
 this explains *how to use it*.
 
-Version 0.1.0. See [API stability](#api-stability) before depending on anything.
+Version 0.2.0. See [API stability](#api-stability) before depending on anything.
 
 ---
 
@@ -16,7 +16,7 @@ From Maven Central:
 <dependency>
     <groupId>com.zeroz4j</groupId>
     <artifactId>zerozdb</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
 </dependency>
 ```
 
@@ -107,6 +107,40 @@ Same guarantees as a block. Always use try-with-resources: `close()` rolls back 
 transaction, so a forgotten `commit()` cannot leave the store's write lock held. Nested
 `beginWrite()` joins the outer transaction; a nested `rollback()` poisons the outer commit rather
 than letting it persist work that was abandoned.
+
+### When a transaction is leaked
+
+A transaction that is never committed, rolled back or closed holds the store's write lock until
+the process ends. Only the thread that took it can release it, and that thread has moved on. From
+that moment the store cannot be written to and cannot be closed — which matters most in a server,
+where a store that cannot be closed cannot be handed back.
+
+This is the one failure a `begin()`/`commit()` API makes possible and a write-block does not, so
+the engine treats it as a first-class thing to report rather than a hang to be diagnosed later:
+
+```java
+// Assert at the end of a request that nothing was left open.
+if (db.hasOpenWriteBlock()) {
+    log.error("left a write block open: {}", db.describeLockState());
+}
+```
+
+| call | answers |
+|---|---|
+| `db.hasOpenWriteBlock()` | is a write-block open on this store, by any thread |
+| `db.writeBlockOwner()` | which thread opened it (the `Thread`, so you can dump its stack) |
+| `db.describeLockState()` | one sentence naming the holder, for a log line |
+| `db.isWriteActive()` | am *I* inside a write — a ThreadLocal, and never an answer about others |
+
+Two more things happen without being asked. A transaction that is garbage-collected without
+ending logs a warning naming the thread that opened it. And `close()` gives up after 30 seconds
+rather than parking for ever, throwing `StoreBusyException` with the same information —
+see [close() does not return](guides/troubleshooting.md#closing-a-store-does-not-return).
+
+While hunting a leak, run with `-Dzerozdb.traceWriteBlockOrigins=true` (or call
+`ZeroZDb.traceWriteBlockOrigins(true)`). Every message then carries the stack that opened the
+block, which is the difference between knowing a block leaked and knowing which line leaked it.
+It costs about a microsecond per block, so it is off by default.
 
 ### Durability
 

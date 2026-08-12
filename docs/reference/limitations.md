@@ -22,6 +22,11 @@ informed one.
   all. An LRU registry is designed but unbuilt; until then, close stores you no longer need.
 - **Reads are not isolated from writes in every consumer.** The engine's own `db.read(...)` blocks
   are, but a host framework that reads the graph directly without going through the engine is not.
+- **A leaked write-block cannot be recovered, only reported.** A `beginWrite()` transaction that is
+  never ended holds the write lock until the process exits, because only the thread that took it
+  can release it. The engine says so loudly — `close()` fails with `StoreBusyException` naming that
+  thread, a dropped transaction logs a warning — but it cannot take the lock back, and there is no
+  way to force a store closed underneath a writer without risking its files.
 
 ## Multiple JVMs
 
@@ -69,7 +74,7 @@ informed one.
 
 ## Maturity
 
-Version 0.1.0. Proven against one real consumer application and covered by 107 tests, including
+Version 0.2.0. Proven against one real consumer application and covered by 116 tests, including
 multi-process harnesses that kill JVMs and verify invariants across process boundaries — but it has
 not run in production anywhere, and it has never been benchmarked beyond a development machine.
 

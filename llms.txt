@@ -1,6 +1,6 @@
 # ZeroZ DB
 
-> A pure-Java database over EclipseStore (version 0.1.0). Your plain Java objects are the
+> A pure-Java database over EclipseStore (version 0.2.0). Your plain Java objects are the
 > database: a graph hangs off a root object, EclipseStore persists it, and ZeroZ DB adds what a
 > real database needs — serialized atomic transactions, crash durability, maintained indexes and
 > unique constraints, conflict detection, cross-store writes, an optional network server, and
@@ -8,7 +8,7 @@
 
 Key things to know before generating ZeroZ DB code:
 
-- Requires JDK 21. Depend on `com.zeroz4j:zerozdb:0.1.0` from Maven Central. Entry class
+- Requires JDK 21. Depend on `com.zeroz4j:zerozdb:0.2.0` from Maven Central. Entry class
   `com.zeroz4j.db.ZeroZDb`.
 - **Enlisting does not cascade.** `ctx.store(obj)` covers that object only. Changing a root field
   *and* a map hanging off it needs both enlisted. This is the single most common mistake.
@@ -18,6 +18,11 @@ Key things to know before generating ZeroZ DB code:
   snapshot taken at enlistment.
 - Never start a write inside `db.read(...)`. A read lock cannot be upgraded, so the engine throws
   rather than deadlocking.
+- `db.beginWrite()` returns a `WriteTransaction` that **must** be committed, rolled back or closed
+  — always try-with-resources. A leaked one holds the store's write lock for the life of the
+  process, so the store can no longer be written to and `close()` fails with `StoreBusyException`
+  after 30 seconds. Ask `db.hasOpenWriteBlock()` / `db.writeBlockOwner()` /
+  `db.describeLockState()` to see whether a block is open and who opened it.
 - **Commands and queries must be plain classes, never records.** EclipseStore's serializer reaches
   fields directly and the JVM refuses that for records without an `--add-exports` flag. It fails at
   the first remote call, not at compile time.

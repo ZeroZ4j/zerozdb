@@ -29,7 +29,9 @@ package com.zeroz4j.db;
  * <p>
  * <strong>Prefer {@link ZeroZDb#write} where you can.</strong> A block cannot be leaked; a
  * transaction can. Always use try-with-resources — {@link #close()} rolls back an unfinished
- * transaction rather than leaving the store's write lock held forever.
+ * transaction rather than leaving the store's write lock held forever. One that is dropped
+ * without any of the three is reported at WARN when the collector reaches it, since by then the
+ * store can no longer be written to or closed and nothing else would say why.
  * <p>
  * <strong>Nesting.</strong> Beginning a transaction while one is already active on this thread
  * joins the outer one: the inner {@code commit()} does nothing and the outer decides. An inner
@@ -41,12 +43,16 @@ public final class WriteTransaction implements AutoCloseable {
     private final ZeroZDb db;
     private final WriteContextImpl context;
     private final boolean outermost;
+    private final WriteBlockLeakWatch leakWatch;
     private boolean finished;
 
-    WriteTransaction(ZeroZDb db, WriteContextImpl context, boolean outermost) {
+    WriteTransaction(ZeroZDb db, WriteContextImpl context, boolean outermost, WriteHold origin) {
         this.db = db;
         this.context = context;
         this.outermost = outermost;
+        // Registering `this` with a Cleaner from the constructor is the sanctioned pattern: the
+        // watch holds nothing that points back here, so it cannot keep this object alive.
+        this.leakWatch = WriteBlockLeakWatch.watch(this, db.orderingKey(), origin);
     }
 
     /** Enlist changed objects here — same contract as inside a write-block. */
@@ -85,8 +91,7 @@ public final class WriteTransaction implements AutoCloseable {
                 db.finishCommit(context);
             }
         } finally {
-            finished = true;
-            db.endTransaction(context, outermost);
+            finish();
         }
     }
 
@@ -102,9 +107,14 @@ public final class WriteTransaction implements AutoCloseable {
                 context.rollbackOnly = true;
             }
         } finally {
-            finished = true;
-            db.endTransaction(context, outermost);
+            finish();
         }
+    }
+
+    private void finish() {
+        finished = true;
+        leakWatch.ended();
+        db.endTransaction(context, outermost);
     }
 
     /** Rolls back if still open, so a leaked transaction cannot hold the write lock forever. */
