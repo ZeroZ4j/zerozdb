@@ -140,6 +140,87 @@ class SchemaCompatibilityTest {
         public transient String cachedLabel;      // must not appear in the descriptor
     }
 
+    public enum SampleStatus {
+        OTHER, OPEN, CLOSED
+    }
+
+    /**
+     * The gate has to see enum constants at all, which it did not until the behaviour proven in
+     * {@code EnumEvolutionTest} was documented: constants are static fields, so the field scan
+     * walked straight past them and a reordered enum reached production unremarked.
+     */
+    @Test
+    void enumConstantsAndTheirPositionsAreCaptured() {
+        String text = SchemaDescriptor.of(List.of(SampleStatus.class)).toText();
+        assertTrue(text.contains("#OTHER @0"), text);
+        assertTrue(text.contains("#OPEN @1"), text);
+        assertTrue(text.contains("#CLOSED @2"), text);
+    }
+
+    @Test
+    void appendingAnEnumConstantIsSafe() {
+        SchemaDescriptor before = descriptor("""
+                shop.Status #OPEN @0
+                shop.Status #CLOSED @1
+                """);
+        SchemaDescriptor after = descriptor("""
+                shop.Status #OPEN @0
+                shop.Status #CLOSED @1
+                shop.Status #ARCHIVED @2
+                """);
+        SchemaCompatibility.Report report = SchemaCompatibility.compare(before, after);
+        assertTrue(report.isRollbackCompatible(), report.format());
+    }
+
+    /** Inserting shifts everything after it, and the new release cannot open the store at all. */
+    @Test
+    void insertingAnEnumConstantBreaksTheStore() {
+        SchemaDescriptor before = descriptor("""
+                shop.Status #OPEN @0
+                shop.Status #CLOSED @1
+                """);
+        SchemaDescriptor after = descriptor("""
+                shop.Status #OPEN @0
+                shop.Status #PENDING @1
+                shop.Status #CLOSED @2
+                """);
+        SchemaCompatibility.Report report = SchemaCompatibility.compare(before, after);
+        assertFalse(report.isRollbackCompatible());
+        assertEquals(SchemaCompatibility.Severity.ROLLBACK_BREAKING,
+                report.problems().get(0).severity());
+        assertTrue(report.problems().get(0).detail().contains("moved from position 1 to 2"),
+                report.format());
+    }
+
+    /** The silent one: those values come back null rather than failing. */
+    @Test
+    void removingAnEnumConstantIsCritical() {
+        SchemaDescriptor before = descriptor("""
+                shop.Status #OPEN @0
+                shop.Status #CLOSED @1
+                """);
+        SchemaDescriptor after = descriptor("shop.Status #OPEN @0\n");
+        SchemaCompatibility.Report report = SchemaCompatibility.compare(before, after);
+        assertFalse(report.isRollbackCompatible());
+        assertEquals(SchemaCompatibility.Severity.CRITICAL, report.problems().get(0).severity());
+        assertTrue(report.problems().get(0).detail().contains("loads back as null"),
+                report.format());
+    }
+
+    /** An enum constant named like a field must not be confused with one. */
+    @Test
+    void enumConstantsAreNotComparedAsFields() {
+        SchemaDescriptor before = descriptor("""
+                shop.Status name java.lang.String
+                shop.Status #NAME @0
+                """);
+        SchemaDescriptor after = descriptor("""
+                shop.Status name java.lang.String
+                shop.Status #NAME @0
+                """);
+        assertTrue(SchemaCompatibility.compare(before, after).changes().isEmpty());
+    }
+
     @Test
     void transientAndStaticFieldsAreIgnored() {
         String text = SchemaDescriptor.of(List.of(SampleItem.class)).toText();

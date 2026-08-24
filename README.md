@@ -35,7 +35,7 @@ Available from Maven Central:
 </dependency>
 ```
 
-Requires JDK 21+. 116 tests. Proven against one real consumer application; the API may still move
+Requires JDK 21+. 139 tests. Proven against one real consumer application; the API may still move
 in 0.x — see [the guide](docs/Guide.md) for which parts are settled.
 
 ## Build

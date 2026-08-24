@@ -35,16 +35,54 @@ exception and no way to ask who held the lock. The leak was the consumer's; the 
 
 ### Dependencies
 - **EclipseStore 4.1.0 → 4.2.0** (storage and serializer). No source change was needed and all
-  116 tests pass on it, including the kill-9 durability proof and the multi-JVM harnesses.
+  139 tests pass on it, including the kill-9 durability proof and the multi-JVM harnesses.
 - 4.2.0 fsyncs where 4.1.0 never did, so the durability claim in `Durability`, the README and the
   design document is now stated more precisely: EclipseStore still does not force the commit path,
   but it does force the outgoing head file at rollover, and the head plus transactions file before
   a housekeeping delete. `Durability.SYNC` is still what makes an acknowledged commit survive
   power loss — the new barriers narrow which *older* files a crash can strand, not which commit.
 
+### Schema
+- **The build gate now sees enum constants.** `SchemaDescriptor` captures each constant and its
+  declaration position; `SchemaCompatibility` reports a moved constant as rollback-breaking and a
+  removed or renamed one as critical. Enum constants are `static` fields, so the descriptor's field
+  scan walked straight past them — the one class of mistake the gate exists for was the one it
+  could not see. An enum's baseline entry gains a `#CONSTANT @ordinal` line per constant; existing
+  baselines still pass, and regenerating one is the ordinary reviewed diff.
+
+### Documentation
+Two things the documentation had never mentioned at all, both found by a consumer application
+rather than by us, and both now proven by tests rather than asserted.
+
+- **Enums.** The word did not appear anywhere in this repository. An enum value is persisted by
+  *position*, so constants may only ever be appended, and a catch-all such as `OTHER` has to be
+  declared first. What was not folklore until it was tested: reordering does not silently corrupt
+  anything — it is refused, loudly, and the store simply will not open. The genuinely silent
+  failure is a constant *disappearing by name*: remove the last constant or rename any constant and
+  the store opens normally while every value stored as that name loads back as `null`.
+  `EnumEvolutionTest` proves all five cases, each in its own JVM against its own compiled ordering.
+  Written up in the guide's §9, the limitations, the troubleshooting page, `AGENTS.md` and
+  `llms.txt`.
+- **`Lazy`.** Named throughout the documentation as *the* mitigation for "a store must fit the
+  heap", and until now used nowhere in this repository and covered by no test. It works, with three
+  edges that were not written down: `ctx.store(owner)` does not persist a change made behind a
+  `Lazy` and a before-image of the owner does not roll one back, because a holder is one
+  reference-shaped field that never changes; an index cannot be built on a holder, and one built on
+  the materialised collection pins it in memory for good; and a `Lazy` **cannot cross the wire at
+  all** — the standalone serializer refuses with `Lazy references cannot be serialized`, so it is
+  an embedded-mode technique, contradicting the design document's claim that a replica materialises
+  only what it navigates. Also recorded: EclipseStore's `LazyReferenceManager` is already running
+  under this engine without configuration, clearing untouched references after about sixteen
+  minutes, so an application does not need to build eviction of its own. The guide gains §11.
+
+Known and not fixed: when a reply fails to serialize, the server's connection thread dies and the
+caller sees an `EOFException` naming nothing, because the reply is serialized outside the
+per-request error handling. Documented in the limitations and the troubleshooting page.
+
 ### Verification
-116 tests. The nine new ones state what a store says while a block is open, when one is leaked,
-and when a transaction is dropped without ending.
+139 tests. The nine new engine ones state what a store says while a block is open, when one is
+leaked, and when a transaction is dropped without ending. `EnumEvolutionTest` (5) and `LazyTest`
+(13) are new, and `SchemaCompatibilityTest` gains 5 for the enum-aware gate.
 
 ## 0.1.0
 

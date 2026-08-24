@@ -37,8 +37,20 @@ import java.util.TreeMap;
  * <p>
  * This is deliberately reflective and dependency-free: the shape that matters to storage is the
  * instance fields, exactly as EclipseStore sees them.
+ * <p>
+ * For an <b>enum</b> the instance fields are not the whole story, because an enum value is
+ * persisted as its <em>position</em> in the declaration. The constants are therefore captured too,
+ * each as a pseudo-field named {@code #CONSTANT} whose "type" is {@code @<ordinal>}. The {@code #}
+ * prefix cannot collide with a Java field name, which is why it was chosen: it lets the constants
+ * ride in the same text format and the same comparison without a second file format.
  */
 public final class SchemaDescriptor {
+
+    /** Marks a pseudo-field that records an enum constant rather than a real field. */
+    static final String ENUM_CONSTANT_PREFIX = "#";
+
+    /** Marks the recorded declaration position of an enum constant. */
+    static final String ORDINAL_PREFIX = "@";
 
     private final Map<String, List<FieldShape>> classes;
 
@@ -66,10 +78,49 @@ public final class SchemaDescriptor {
                     fields.add(new FieldShape(field.getName(), field.getType().getName()));
                 }
             }
+            addEnumConstants(type, fields);
             fields.sort(java.util.Comparator.comparing(FieldShape::name));
             classes.put(type.getName(), List.copyOf(fields));
         }
         return new SchemaDescriptor(classes);
+    }
+
+    /**
+     * Records an enum's constants and their positions. Enum constants are {@code static}, so the
+     * field scan above skips them — which is exactly how a reordered enum used to walk past the
+     * build gate unnoticed.
+     */
+    private static void addEnumConstants(Class<?> type, List<FieldShape> fields) {
+        if (!type.isEnum()) {
+            return;
+        }
+        Object[] constants = type.getEnumConstants();
+        if (constants == null) {
+            return;
+        }
+        for (Object constant : constants) {
+            Enum<?> value = (Enum<?>) constant;
+            fields.add(new FieldShape(ENUM_CONSTANT_PREFIX + value.name(),
+                    ORDINAL_PREFIX + value.ordinal()));
+        }
+    }
+
+    static boolean isEnumConstant(FieldShape shape) {
+        return shape.name().startsWith(ENUM_CONSTANT_PREFIX);
+    }
+
+    /** The constant name without the marker prefix. */
+    static String constantName(FieldShape shape) {
+        return shape.name().substring(ENUM_CONSTANT_PREFIX.length());
+    }
+
+    /** The recorded declaration position, or {@code -1} if the entry is unreadable. */
+    static int ordinal(FieldShape shape) {
+        try {
+            return Integer.parseInt(shape.type().substring(ORDINAL_PREFIX.length()));
+        } catch (RuntimeException e) {
+            return -1;
+        }
     }
 
     public Map<String, List<FieldShape>> classes() {

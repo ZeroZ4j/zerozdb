@@ -58,7 +58,14 @@ import java.util.TreeSet;
  *       the silent one: EclipseStore's legacy mapping pairs leftover fields by type, so the
  *       removed field's data lands in the added field with no error and no log. Intended
  *       renames look identical, which is exactly why a human must confirm it at build time.</li>
+ *   <li><b>Enum constant moved</b> — breaks rollback, and more: an enum value is persisted as its
+ *       position, so the release that reorders the constants cannot open the existing store at
+ *       all. Only appending at the end is safe.</li>
+ *   <li><b>Enum constant removed or renamed</b> — <b>critical</b>, and silent: values stored as
+ *       that constant load back as {@code null}. (Both proven by {@code EnumEvolutionTest}.)</li>
  * </ul>
+ * Enum constants are {@code static} fields, so before this was added they were invisible here —
+ * the one class of mistake the gate exists for was the one it could not see.
  */
 public final class SchemaCompatibility {
 
@@ -67,7 +74,7 @@ public final class SchemaCompatibility {
         SAFE,
         /** The previous release can no longer read data this release writes. */
         ROLLBACK_BREAKING,
-        /** Silent data movement between fields. Must be reviewed by a human. */
+        /** Silent data movement, or silent data loss. Must be reviewed by a human. */
         CRITICAL
     }
 
@@ -126,9 +133,10 @@ public final class SchemaCompatibility {
     private static List<Change> compareFields(String className,
                                               List<SchemaDescriptor.FieldShape> before,
                                               List<SchemaDescriptor.FieldShape> after) {
-        List<Change> changes = new ArrayList<>();
-        Map<String, String> beforeTypes = types(before);
-        Map<String, String> afterTypes = types(after);
+        List<Change> changes = new ArrayList<>(
+                compareEnumConstants(className, constants(before), constants(after)));
+        Map<String, String> beforeTypes = types(realFields(before));
+        Map<String, String> afterTypes = types(realFields(after));
 
         Set<String> removed = new LinkedHashSet<>(beforeTypes.keySet());
         removed.removeAll(afterTypes.keySet());
@@ -175,6 +183,63 @@ public final class SchemaCompatibility {
             }
         }
         return changes;
+    }
+
+    /**
+     * Enum constants, which the field comparison above cannot judge: what matters for them is not
+     * name and type but name and <em>position</em>, because an enum value is persisted as its
+     * ordinal. Proven by {@code EnumEvolutionTest}.
+     */
+    private static List<Change> compareEnumConstants(String className,
+                                                     Map<String, Integer> before,
+                                                     Map<String, Integer> after) {
+        if (before.isEmpty() && after.isEmpty()) {
+            return List.of();
+        }
+        List<Change> changes = new ArrayList<>();
+
+        for (Map.Entry<String, Integer> entry : before.entrySet()) {
+            String constant = entry.getKey();
+            Integer now = after.get(constant);
+            if (now == null) {
+                changes.add(new Change(Severity.CRITICAL, className,
+                        "enum constant '" + constant + "' was removed or renamed — every value "
+                                + "already stored as it loads back as null, with no error and no "
+                                + "log line. Keep the constant and deprecate it instead, or "
+                                + "migrate the stored values in a release that still declares "
+                                + "it."));
+            } else if (!now.equals(entry.getValue())) {
+                changes.add(new Change(Severity.ROLLBACK_BREAKING, className,
+                        "enum constant '" + constant + "' moved from position " + entry.getValue()
+                                + " to " + now + " — an enum value is persisted as its position, "
+                                + "so this release will refuse to open the existing store at all. "
+                                + "Restore the declaration order; new constants can only be "
+                                + "appended at the end."));
+            }
+        }
+
+        for (Map.Entry<String, Integer> entry : after.entrySet()) {
+            if (!before.containsKey(entry.getKey())) {
+                changes.add(new Change(Severity.SAFE, className,
+                        "enum constant '" + entry.getKey() + "' added at position "
+                                + entry.getValue() + " (appending is the one safe enum edit; note "
+                                + "that once this release stores the new constant, a rollback "
+                                + "reads those values as null)"));
+            }
+        }
+        return changes;
+    }
+
+    private static Map<String, Integer> constants(List<SchemaDescriptor.FieldShape> shapes) {
+        Map<String, Integer> map = new java.util.LinkedHashMap<>();
+        shapes.stream().filter(SchemaDescriptor::isEnumConstant)
+                .forEach(s -> map.put(SchemaDescriptor.constantName(s), SchemaDescriptor.ordinal(s)));
+        return map;
+    }
+
+    private static List<SchemaDescriptor.FieldShape> realFields(
+            List<SchemaDescriptor.FieldShape> shapes) {
+        return shapes.stream().filter(s -> !SchemaDescriptor.isEnumConstant(s)).toList();
     }
 
     private static Map<String, String> types(List<SchemaDescriptor.FieldShape> fields) {
