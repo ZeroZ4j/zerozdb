@@ -326,6 +326,55 @@ void schemaStaysRollbackCompatible() {
 Adding fields is safe and keeps rollback possible. Removing or retyping a field does not — once
 the new release rewrites a record, the previous release cannot read it.
 
+### Enums: append only, and put the catch-all first
+
+An enum value is persisted as its **position** in the declaration, not as its name. The names are
+recorded next to it, and EclipseStore uses them on load to check that nothing moved.
+
+The table below is proven by `EnumEvolutionTest`, which compiles two orderings of the same enum and
+runs each in its own JVM — the only faithful way to reproduce a release that reorders one.
+
+| Change to the constant list | What actually happens |
+|---|---|
+| Append a constant at the end | **Safe.** Every stored value keeps its position. |
+| Insert one, remove one from the middle, or reorder | **The store will not open at all.** Loading fails with `PersistenceExceptionTypeConsistencyEnum`, naming the constant whose position moved. Nothing is corrupted — put the old order back and the store reads again — but the release cannot run. |
+| Remove the last constant, or rename any constant | **Silent.** The store opens, every other value is fine, and every value stored as the vanished name comes back as `null`. |
+
+Note what is *not* in that table: a stored value never comes back as a different constant. The
+ordering check catches that case before it can happen.
+
+So the rule is: **only ever append.** And because appending is the only room a release has, a
+catch-all constant such as `OTHER` has to be declared **first**:
+
+```java
+public enum Source {
+    OTHER,          // first, so that anything added later can simply be appended
+    REFERRAL,
+    SEARCH,
+    CAMPAIGN        // new constants join here, at the end, for ever
+}
+```
+
+Declared last, `OTHER` leaves nowhere safe to add anything: a new constant either goes after the
+catch-all, which reads wrong, or in front of it, which moves the catch-all's position and stops the
+store from opening.
+
+A constant you no longer want should be deprecated rather than deleted, so stored values still
+resolve:
+
+```java
+@Deprecated
+CANCELLED,          // no longer offered; kept so existing data still loads
+```
+
+`SchemaCompatibility` checks all of this — but only for the enums you actually hand it, so list
+your enum classes alongside your entity classes:
+
+```java
+SchemaCompatibility.check(Path.of("src/test/resources/schema-baseline.txt"),
+        List.of(ShopRoot.class, Product.class, Source.class));
+```
+
 ## 10. Operations console
 
 ```java
@@ -344,6 +393,150 @@ ConsoleServer console = ConsoleServer.builder()
 Browse the object graph by field name, run the named queries you publish, see the model diffed
 against the committed baseline. Read-only, loopback-only unless given a password.
 
+## 11. Collections that grow without limit: `Lazy`
+
+A store has to fit the heap. EclipseStore's `Lazy` reference is how a *store* can be bigger than
+what is resident: the holder is a small object that remembers an object id, the graph behind it is
+fetched on first use, and it can be released again afterwards.
+
+```java
+public class Song {
+    public String title;                                   // resident: listings and indexes need it
+    public Lazy<List<Note>> notes = Lazy.Reference(new ArrayList<>());
+
+    public List<Note> notes() {
+        return notes.get();                                // loads from disk on first call
+    }
+}
+```
+
+Reopening the store brings back the titles and not the notes. `notes.get()` fetches them,
+`notes.clear()` releases them, `notes.isLoaded()` says which state it is in.
+
+That much is ordinary EclipseStore. The rest of this section is what `Lazy` does to the guarantees
+the rest of this guide makes — all of it proven by `LazyTest`, with the unproven parts marked.
+
+The one sentence to remember: **a `Lazy` holder is a single reference-shaped field, and it never
+changes.** Everything this engine does by looking at an object's own fields — enlistment,
+before-images, index key extraction — therefore sees nothing at all when the collection behind the
+holder changes.
+
+### Enlist what is behind the reference, never the owner
+
+```java
+db.write(ctx -> {
+    song.notes().add(note);
+    ctx.store(song);            // WRONG: song's own record did not change
+});
+
+db.write(ctx -> {
+    song.notes().add(note);
+    ctx.store(song.notes());    // right: enlist the materialised collection
+});
+```
+
+This is the ordinary "enlisting does not cascade" rule, but `Lazy` makes it easier to get wrong,
+because `ctx.store(song)` *looks* like it covers everything reachable from the song.
+
+### Rollback does not reach behind a `Lazy`
+
+A before-image of an object records its flat field values. The `Lazy` field holds the same holder
+object before and after, so a failed write-block restores nothing and the mutation survives in
+memory:
+
+```java
+db.write(ctx -> {
+    ctx.edit(song);             // snapshots the holder, not the notes
+    song.notes().add(note);
+    throw new RuntimeException("boom");
+});                             // the note is still in the list
+```
+
+Enlisting the materialised collection restores normal fidelity, because a Map or Collection
+before-image snapshots contents:
+
+```java
+ctx.edit(song.notes());         // now rollback puts the list back
+```
+
+So `ctx.edit(lazy.get())` is the habit to build, for the same call that `ctx.store(lazy.get())`
+will end.
+
+### Indexes
+
+An index needs something to iterate, and a holder is neither a Map nor a Collection, so a holder
+cannot be an index source — `db.index(..., () -> song.notes, ...)` throws `IllegalStateException`.
+
+Pointing an index at the materialised collection works, and costs exactly what the `Lazy` was
+avoiding: registering the index scans the source, so the collection is in memory from then on, and
+every commit that enlists it scans it again.
+
+The shape that keeps both properties is to **index the owners, not their contents**:
+
+```java
+Index<String, Song> byTitle = db.index("by-title", Song.class, () -> root.songs, s -> s.title);
+```
+
+The songs are small and resident; each song's notes stay on disk until somebody opens that song.
+
+### Eviction is already running — you probably do not need your own
+
+EclipseStore starts its global `LazyReferenceManager` when the storage manager starts, so a
+background thread is already clearing untouched references under this engine with no configuration
+at all. `LazyTest` asserts it is running after `ZeroZDb.open(...)`; the application never calls
+`start()`.
+
+Its defaults, read from EclipseStore 4.2.0's source rather than measured here: it wakes every
+second with a one-millisecond budget, and clears a reference that has not been touched for about
+sixteen minutes, sooner under memory pressure. That is a slow, safe background trickle, not prompt
+eviction.
+
+Clearing by hand is safe and reversible — `lazy.clear()` releases the collection and the next
+`get()` loads it again — with one trap worth knowing if you plan to clear on some event of your
+own, such as a user logging out: clearing a holder whose contents have **never been committed**
+throws `IllegalStateException`, because there would be nowhere to load them back from. That is the
+library protecting unsaved work, not a bug.
+
+### Inside read blocks and write blocks
+
+Loading a reference is disk I/O, and it works inside both kinds of block. Inside `db.read(...)`
+that is unremarkable.
+
+Inside a write-block it extends how long the write lock is held, by a disk read, while every other
+writer waits. The guidance is therefore to **materialise before the block**:
+
+```java
+List<Note> notes = song.notes();        // load outside
+db.write(ctx -> {
+    notes.add(note);
+    ctx.store(notes);
+});
+```
+
+Honest caveat: that this hurts under contention is reasoning, not measurement. Nothing here has
+measured how much a `Lazy` load inside a write-block costs concurrent readers.
+
+### `Lazy` cannot cross the wire
+
+This is the hard limit. The network layer's wire format is EclipseStore's standalone serializer,
+which has no storage behind it and so cannot write a reference whose entire meaning is "ask the
+storage for object 12345". It refuses explicitly:
+`UnsupportedOperationException: Lazy references cannot be serialized`.
+
+That applies whether or not the owner has the reference loaded, and it means:
+
+- a `ReplicaView` of a graph containing a `Lazy` cannot be built;
+- a `DbQuery` must not return objects that hold `Lazy` fields.
+
+It fails badly, too: the reply is serialized outside the server's per-request error handling, so
+the connection drops and the caller sees an `EOFException` rather than anything naming a `Lazy`.
+Have queries return the values the client needs — plain lists, records of primitives — rather than
+your stored entities.
+
+**`Lazy` is therefore an embedded-mode technique.** It is the right answer to a large single-JVM
+store, and it is not available to the replicated deployments described in §8. The design document's
+claim that a replica materialises only what it navigates does not hold for `Lazy`.
+
 ## API stability
 
 **0.x — the API may change.** What is settled by real use: `ZeroZDb` open/attach/read/write,
@@ -355,8 +548,11 @@ Anything not mentioned in this guide should be treated as internal even when it 
 
 ## Known limits
 
-- **Everything in a store must fit the heap** (EclipseStore `Lazy` references mitigate). Very
-  large datasets are the wrong fit — see the design document's §3.
+- **Everything in a store must fit the heap.** `Lazy` references mitigate it in embedded mode —
+  see §11 for what they cost and the fact that they cannot be replicated. Very large datasets are
+  the wrong fit — see the design document's §3.
+- **Enum constants can only be appended.** Any other edit either stops the store from opening or
+  turns stored values into `null` — see §9.
 - **One writer per store.** Throughput ceiling ~2.4k commits/s buffered, ~280/s synced on a dev
   laptop; stores are independent, so N stores multiply that.
 - **No store eviction yet.** A process that opens thousands of stores lazily and never closes

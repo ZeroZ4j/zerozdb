@@ -27,6 +27,35 @@ If you changed a field on the root *and* the map, enlist both.
 The snapshot is taken when the object is enlisted. If you mutate first and enlist afterwards, the
 snapshot already contains the mutation. Use `ctx.edit(obj)` *before* changing it.
 
+## My change behind a `Lazy` vanished, and rollback did not undo one either
+
+Same cause both times: **a `Lazy` holder is one reference-shaped field, and it never changes.**
+Enlisting the owner covers the owner's own record, which did not change; a before-image of the
+owner snapshots the holder, not the collection behind it.
+
+```java
+db.write(ctx -> {
+    song.notes().add(note);
+    ctx.store(song);            // WRONG: nothing about song itself changed
+});
+
+db.write(ctx -> {
+    ctx.edit(song.notes());     // enlist the materialised collection, before mutating
+    song.notes().add(note);
+    ctx.store(song.notes());
+});
+```
+
+## A client or replica dies with EOFException
+
+If the graph contains a `Lazy` reference, that is why. The wire format is EclipseStore's standalone
+serializer, which refuses them outright — `Lazy references cannot be serialized` — and the reply is
+serialized outside the server's per-request error handling, so the connection drops instead of
+reporting the reason.
+
+`Lazy` is an embedded-mode technique. Do not put `Lazy` fields on anything a `DbQuery` returns, and
+do not build a `ReplicaView` over a graph that contains one.
+
 ## "Cannot start a write while this thread holds a read block"
 
 You called `db.write(...)` or `db.beginWrite()` inside `db.read(...)`. A read lock cannot be
@@ -89,6 +118,44 @@ This is deliberate. EclipseStore's own lenient matching pairs leftover fields *b
 removing one field and adding an unrelated one of the same type silently moves the old value into
 the new field — wrong data with no error. `SchemaEvolution.lenient()` restores that behaviour if
 you need it.
+
+## An enum field came back null after a release
+
+**Someone deleted or renamed an enum constant.** An enum value is persisted as its *position* in
+the declaration, and the constant names are recorded alongside. A name that is no longer there has
+nothing to resolve to, so the value loads as `null` — with no exception and no log line, on a field
+your model probably never allows to be null.
+
+Two edits do this: removing the **last** constant, and renaming any constant. Both leave every
+other constant's position untouched, which is why the store still opens and only the affected
+values are hit.
+
+Put the constant back, under its original name and in its original position, and the values return
+— nothing was overwritten. Then deprecate it rather than deleting it:
+
+```java
+@Deprecated
+CANCELLED,          // no longer offered; kept so existing data still loads
+```
+
+## The store will not open after a release, complaining about an enum
+
+```
+The ordinal of the enum constant CLOSED of com.x.Status
+would be change by the legacy type mapping from 2 to 3. This may cause the storage becoming corrupted.
+If the ordinal change is intended you need to define a manual legacy type mapping!
+```
+
+**A constant was inserted, removed from the middle, or reordered**, which moves the position of
+every constant after it. Because the value on disk *is* the position, EclipseStore refuses to load
+rather than hand back a different constant than the one that was stored.
+
+This is loud and total — the whole store will not open, not just the affected values — but nothing
+is corrupted. Restore the original declaration order and the store reads again. Then add the new
+constant at the **end**, which is the only safe place.
+
+If a catch-all constant like `OTHER` sits last and there is nowhere sensible to append, that is the
+real bug: a catch-all belongs first, so that everything added later can simply go on the end.
 
 ## The build fails with ROLLBACK_BREAKING
 
