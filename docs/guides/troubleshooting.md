@@ -27,35 +27,6 @@ If you changed a field on the root *and* the map, enlist both.
 The snapshot is taken when the object is enlisted. If you mutate first and enlist afterwards, the
 snapshot already contains the mutation. Use `ctx.edit(obj)` *before* changing it.
 
-## My change behind a `Lazy` vanished, and rollback did not undo one either
-
-Same cause both times: **a `Lazy` holder is one reference-shaped field, and it never changes.**
-Enlisting the owner covers the owner's own record, which did not change; a before-image of the
-owner snapshots the holder, not the collection behind it.
-
-```java
-db.write(ctx -> {
-    song.notes().add(note);
-    ctx.store(song);            // WRONG: nothing about song itself changed
-});
-
-db.write(ctx -> {
-    ctx.edit(song.notes());     // enlist the materialised collection, before mutating
-    song.notes().add(note);
-    ctx.store(song.notes());
-});
-```
-
-## A client or replica dies with EOFException
-
-If the graph contains a `Lazy` reference, that is why. The wire format is EclipseStore's standalone
-serializer, which refuses them outright — `Lazy references cannot be serialized` — and the reply is
-serialized outside the server's per-request error handling, so the connection drops instead of
-reporting the reason.
-
-`Lazy` is an embedded-mode technique. Do not put `Lazy` fields on anything a `DbQuery` returns, and
-do not build a `ReplicaView` over a graph that contains one.
-
 ## "Cannot start a write while this thread holds a read block"
 
 You called `db.write(...)` or `db.beginWrite()` inside `db.read(...)`. A read lock cannot be

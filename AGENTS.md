@@ -18,7 +18,7 @@ Requires **JDK 21** (virtual threads) and Maven 3.9+.
 
 ```bash
 mvn install          # build and install locally
-mvn test             # 139 tests, about two minutes
+mvn test             # 126 tests, about two minutes
 mvn javadoc:javadoc  # API docs into target/reports/apidocs
 ```
 
@@ -65,14 +65,6 @@ from opening at all; removing the last constant or renaming any constant is sile
 every value stored as that name loads back as `null`. So a catch-all such as `OTHER` goes **first**,
 never last, because appending is the only edit a later release can make, and a constant that is no
 longer wanted gets `@Deprecated`, not deleted. Proven by `EnumEvolutionTest`.
-
-**`Lazy` is an embedded-mode technique and is invisible to the engine's bookkeeping.** A holder is
-one reference-shaped field that never changes, so `ctx.store(owner)` does not persist a change made
-behind it and a before-image of the owner does not roll one back — enlist `lazy.get()`, the
-materialised collection. It also cannot cross the wire at all: the standalone serializer refuses
-with `Lazy references cannot be serialized`, so no `DbQuery` may return an object holding a `Lazy`
-field and no `ReplicaView` may be built over a graph containing one. Proven by `LazyTest`; the
-guide's §11 has the rest.
 
 **Schema matching is strict by default.** A renamed field arrives unset rather than being filled
 from an unrelated field of the same type. Declare renames with

@@ -63,7 +63,7 @@ boundary would give you a worse Postgres rather than a better ZeroZ DB.
 
 ## Status
 
-Version 0.2.0, 139 tests, proven against one real consumer application. The API may still move in
+Version 0.2.0, 126 tests, proven against one real consumer application. The API may still move in
 0.x — the [guide](Guide.md) says which parts are settled and which are not. Available from Maven
 Central as `com.zeroz4j:zerozdb:0.2.0`.
 

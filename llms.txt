@@ -39,10 +39,6 @@ Key things to know before generating ZeroZ DB code:
   or removing from the middle stops the store from opening; removing the last constant or renaming
   one silently turns stored values into `null`. Declare a catch-all such as `OTHER` **first**, and
   deprecate constants rather than deleting them.
-- **`Lazy` works only in embedded mode.** `ctx.store(owner)` does not persist changes behind a
-  `Lazy` and rollback does not restore them — enlist `lazy.get()` instead. A `Lazy` cannot be
-  serialized, so no `DbQuery` may return an object holding one and no `ReplicaView` may cover a
-  graph containing one.
 
 ## Documentation
 

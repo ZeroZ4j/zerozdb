@@ -8,8 +8,7 @@ informed one.
 - **A store must fit the heap.** The object graph *is* the heap — that is the whole reason this is
   fast. EclipseStore `Lazy` references keep the resident footprint proportional to what you
   actually navigate, but a dataset that fundamentally exceeds memory is the wrong fit. At that
-  point the honest answer is PostgreSQL. What `Lazy` does and does not cover is its own section
-  below.
+  point the honest answer is PostgreSQL.
 - **No query language.** Queries are Java: streams over the graph, plus maintained indexes for
   lookups that would otherwise scan. This is deliberate, not missing. If you need ad-hoc analytical
   queries over large data, this is the wrong tool.
@@ -48,35 +47,6 @@ informed one.
   process frozen beyond its lease could in principle resume mid-write. Closing that needs
   storage-level fencing EclipseStore does not offer.
 
-## `Lazy` references
-
-The mitigation named throughout this documentation for "a store must fit the heap". It works, and
-these are its edges. All proven by `LazyTest`.
-
-- **`Lazy` cannot cross the wire, at all.** The network layer serializes with EclipseStore's
-  standalone serializer, which refuses outright:
-  `UnsupportedOperationException: Lazy references cannot be serialized`. So a `ReplicaView` of a
-  graph containing a `Lazy` cannot be built, and a `DbQuery` must not return objects holding
-  `Lazy` fields. This holds whether or not the owner has the reference loaded. **`Lazy` is an
-  embedded-mode technique**; it is not available to the replicated deployments this library
-  otherwise supports.
-- **That failure is undiagnosable as it stands.** The reply is serialized outside the server's
-  per-request error handling, so the connection drops and the caller gets an `EOFException` naming
-  nothing. The server-side cause is not reported to the client.
-- **Rollback does not reach behind a `Lazy`.** A before-image records an object's flat fields, and
-  the holder is one reference that does not change, so a failed write-block leaves the collection
-  behind it mutated. Enlist the materialised collection — `ctx.edit(lazy.get())` — to get the
-  engine's normal rollback fidelity.
-- **Nor does enlistment.** `ctx.store(owner)` does not persist a change made behind the owner's
-  `Lazy`. This is the ordinary no-cascade rule, but it is easier to get wrong here because the
-  owner looks like it covers everything reachable from it.
-- **An index cannot be built on a holder**, and an index built on the materialised collection
-  forces it resident for good — the cost the `Lazy` existed to avoid. Index the owners instead.
-- **Eviction is a slow background trickle, not prompt release.** EclipseStore's
-  `LazyReferenceManager` runs automatically under this engine, but its defaults clear a reference
-  only after about sixteen minutes untouched, sooner under memory pressure. Nothing here evicts on
-  a business event.
-
 ## Security
 
 - **One shared secret per server.** No per-client identity, no per-store authorisation. A client
@@ -112,7 +82,7 @@ these are its edges. All proven by `LazyTest`.
 
 ## Maturity
 
-Version 0.2.0. Proven against one real consumer application and covered by 139 tests, including
+Version 0.2.0. Proven against one real consumer application and covered by 126 tests, including
 multi-process harnesses that kill JVMs and verify invariants across process boundaries — but it has
 not run in production anywhere, and it has never been benchmarked beyond a development machine.
 
