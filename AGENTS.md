@@ -120,6 +120,8 @@ you add a limitation, add it there rather than omitting it.
 - [docs/guides/troubleshooting.md](docs/guides/troubleshooting.md) — failures that are silent or
   misleading, and what each actually means.
 - [docs/reference/limitations.md](docs/reference/limitations.md) — what this is not for.
+- [docs/reference/rules.md](docs/reference/rules.md) — the short rule list for coding assistants.
+  It lived in `context7.json` until Context7 refused strings that long; keep rules out of that file.
 - [docs/Feasibility-And-Design.md](docs/Feasibility-And-Design.md) — why it is built this way,
   including the alternatives rejected and the measurements that settled arguments.
 - [RELEASING.md](RELEASING.md) — how a maintainer cuts a release.

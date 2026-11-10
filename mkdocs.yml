@@ -62,6 +62,7 @@ nav:
   - Reference:
       - Glossary: reference/glossary.md
       - Limitations: reference/limitations.md
+      - Rules for coding assistants: reference/rules.md
 
   - Design:
       - Design and rationale: Feasibility-And-Design.md

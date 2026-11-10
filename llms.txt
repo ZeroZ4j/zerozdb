@@ -49,5 +49,6 @@ Key things to know before generating ZeroZ DB code:
 - [Troubleshooting](docs/guides/troubleshooting.md): the failure modes that are silent or
   misleading, and what each one actually means.
 - [Limitations](docs/reference/limitations.md): what this database is not for.
+- [Rules for coding assistants](docs/reference/rules.md): the short rule list, one line per rule.
 - [Design journal](docs/Feasibility-And-Design.md): why it is built this way, the rejected
   alternatives, the measurements, and the things that turned out to be wrong.
